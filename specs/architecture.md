@@ -34,6 +34,36 @@ dark-text-secondary: #a0a0a0
 
 ---
 
+## Auth & Account/Facility Loading
+
+**Do not redesign this — reuse the proven pattern from `tandem-sample-stats`.**
+
+### Login
+`js/auth.js` handles the full OAuth 3-legged PKCE flow. Call `checkLogin()` on page load; call `login()` to initiate. No changes needed.
+
+### Loading all facilities (the efficient way)
+Use `getUserResources('@me')` from `js/api.js`. This makes **one API call** that returns all facilities and groups across all regions. Cache the result for the session in a `userResourcesCache` variable.
+
+```javascript
+// One call — returns { twins: [...], groups: [...] } across all regions
+userResourcesCache = await getUserResources('@me');
+
+// Build a facilityURN → region map for instant lookups (no per-region round-trips)
+userResourcesCache.twins.forEach(twin => {
+  facilityRegionMap.set(twin.id, twin.region);
+});
+```
+
+**Why this matters:** For large accounts (e.g. 1000 facilities), the old approach of 3 calls per account × N accounts is prohibitively slow. The single `@me/resources` call is the correct approach.
+
+### Account & facility dropdowns
+Follow `populateAccountsDropdown()` and `populateFacilitiesDropdown()` from `tandem-sample-stats/js/app.js` exactly, including:
+- Alphabetical sort with "SHARED DIRECTLY" always at bottom
+- `localStorage` for last-selected account and facility
+- Schema version check before loading facility data
+
+---
+
 ## Application Structure
 
 Single-page app with three primary views accessible via a top navigation tab bar:
