@@ -19,7 +19,7 @@ import {
 import { RegionLabelMap } from '../tandem/constants.js';
 import { clearFacilityCache } from './state/facilityCache.js';
 import { render as renderPortfolio, applyFilter, initLoadMore } from './views/portfolioView.js';
-import { render as renderMap } from './views/mapView.js';
+import { render as renderMap, invalidateMapSize } from './views/mapView.js';
 import { render as renderComparison } from './views/comparisonView.js';
 
 // ── DOM refs ──────────────────────────────────────────────────────────────────
@@ -235,6 +235,9 @@ function switchTab(tabId) {
     TABS.forEach(id => {
         document.getElementById(`view-${id}`)?.classList.toggle('hidden', id !== tabId);
     });
+
+    // Leaflet needs a size hint when its container becomes visible
+    if (tabId === 'map') invalidateMapSize();
 }
 
 // ── Application init ──────────────────────────────────────────────────────────

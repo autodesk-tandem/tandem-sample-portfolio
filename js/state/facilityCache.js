@@ -13,6 +13,7 @@ const cache = new Map(); // facilityURN → summary object
  * @property {string}      region
  * @property {string|null} thumbnailURL  - blob URL (or null if unavailable)
  * @property {number}      modelCount
+ * @property {string|null} address       - from Identity Data.Address in Tandem metadata
  * @property {boolean}     loaded        - true once full summary has been fetched
  * @property {boolean}     error         - true if loading failed
  */

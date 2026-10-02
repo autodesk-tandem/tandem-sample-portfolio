@@ -159,6 +159,6 @@ Hot spot thresholds are **TBD** — we will define them once we see real data. T
 
 ## Open Questions
 
-- [ ] **"Set location" UX** — should setting a facility's map location be done by clicking on the map, typing lat/lng coordinates, or typing an address (geocoded)? All three are possible with Leaflet.
+- [x] **"Set location" UX** — three options: (1) click on the map to drop a pin, (2) type lat/lng coordinates manually, (3) geocode by address. The facility's address (from `Identity Data.Address` in Tandem metadata) is pre-populated in the address field automatically. Geocoding uses Nominatim (OpenStreetMap, free, no API key).
 - [ ] **Compare: max facilities** — capped at 10 for prototype. Is that enough for a meaningful comparison, or should it be higher?
 - [ ] **Hot spot badge design** — to be decided once we have real data to look at. Placeholder slot is in the layout.

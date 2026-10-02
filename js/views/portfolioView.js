@@ -9,7 +9,7 @@
  *  - Badge slot reserved on every card (empty for now, hot-spot logic TBD)
  */
 
-import { getFacilityThumbnail, getModels, cleanupThumbnailURLs } from '../api.js';
+import { getFacilityThumbnail, getFacilityInfo, cleanupThumbnailURLs } from '../api.js';
 import { getCachedSummary, setCachedSummary } from '../state/facilityCache.js';
 import { getEnv } from '../config.js';
 
@@ -158,11 +158,14 @@ async function loadFacilityData(facility, card) {
     const region = facilityRegionMap?.get(facility.urn) ?? 'us';
 
     try {
-        // Fire thumbnail and models in parallel
-        const [thumbnailURL, models] = await Promise.all([
+        // Fetch facility info (gives us models + address) and thumbnail in parallel
+        const [thumbnailURL, info] = await Promise.all([
             getFacilityThumbnail(facility.urn, region),
-            getModels(facility.urn, region).catch(() => []),
+            getFacilityInfo(facility.urn, region).catch(() => null),
         ]);
+
+        const models = info?.links ?? [];
+        const address = info?.props?.['Identity Data']?.['Address'] ?? null;
 
         const summary = {
             urn:          facility.urn,
@@ -170,6 +173,7 @@ async function loadFacilityData(facility, card) {
             region,
             thumbnailURL: thumbnailURL ?? null,
             modelCount:   Array.isArray(models) ? models.length : 0,
+            address,
             loaded:       true,
             error:        false,
         };
