@@ -287,6 +287,25 @@ function wireLocationForm() {
 
 // ── Geocoding (Nominatim) ─────────────────────────────────────────────────────
 
+/**
+ * Strip suite/unit/floor designators that confuse Nominatim.
+ * e.g. "23 Drydock Ave, Ste. 110E Boston MA" → "23 Drydock Ave Boston MA"
+ */
+function stripSubpremise(addr) {
+    return addr
+        .replace(/,?\s*(ste\.?|suite|apt\.?|apartment|unit|fl\.?|floor|room|rm\.?|#)\s*[\w-]*/gi, '')
+        .replace(/\s{2,}/g, ' ')
+        .trim();
+}
+
+async function nominatimSearch(query) {
+    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1`;
+    const resp = await fetch(url, {
+        headers: { 'Accept-Language': 'en', 'User-Agent': 'tandem-sample-portfolio/1.0' }
+    });
+    return resp.json();
+}
+
 async function geocodeAddress(urn) {
     const input = document.getElementById('addrInput');
     const query = input?.value?.trim();
@@ -298,30 +317,44 @@ async function geocodeAddress(urn) {
     document.getElementById('geocodeBtn').disabled = true;
 
     try {
-        // Nominatim usage policy: max 1 req/sec, User-Agent required
-        const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1`;
-        const resp = await fetch(url, {
-            headers: { 'Accept-Language': 'en', 'User-Agent': 'tandem-sample-portfolio/1.0' }
-        });
-        const results = await resp.json();
+        // Attempt 1: full address as typed
+        let results = await nominatimSearch(query);
+        let usedQuery = query;
+
+        // Attempt 2: strip suite/unit numbers (Nominatim can't resolve them)
+        if (!results.length) {
+            const simplified = stripSubpremise(query);
+            if (simplified !== query) {
+                setGeocodeStatus(`Trying without suite/unit: "${simplified}"…`);
+                // Nominatim rate-limit: 1 req/sec
+                await new Promise(r => setTimeout(r, 1100));
+                results = await nominatimSearch(simplified);
+                usedQuery = simplified;
+            }
+        }
 
         if (!results.length) {
-            setGeocodeStatus('⚠ Address not found. Edit the address or click the map directly.', true);
+            setGeocodeStatus(
+                '⚠ Address not found. Try simplifying it (remove suite/floor numbers) or click the map directly.',
+                true
+            );
             return;
         }
 
         const { lat, lon, display_name } = results[0];
         const numLat = parseFloat(lat);
-        const numLng = parseFloat(lon);
+        const numLng  = parseFloat(lon);
 
-        // Show PREVIEW marker (orange) — not yet saved
+        const note = usedQuery !== query ? ` (searched as: "${usedQuery}")` : '';
+
+        // Show PREVIEW marker (orange) — not yet confirmed/saved
         previewMarker = L.marker([numLat, numLng], { icon: tandemIcon('#f59e0b') })
             .addTo(map)
-            .bindPopup(`<div style="font-size:12px;color:#1a1a1a;max-width:220px;">${escapeHtml(display_name)}</div>`)
+            .bindPopup(`<div style="font-size:12px;color:#1a1a1a;max-width:240px;">${escapeHtml(display_name)}</div>`)
             .openPopup();
 
         map.setView([numLat, numLng], 15);
-        setGeocodeStatus(`Found: ${display_name.split(',').slice(0, 3).join(',')}`, false);
+        setGeocodeStatus(`Found: ${display_name.split(',').slice(0, 3).join(',')}${note}`);
         document.getElementById('previewActions')?.classList.remove('hidden');
 
     } catch (err) {
