@@ -1,18 +1,212 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Tandem Portfolio</title>
-  <!--
-    tandem-sample-portfolio
-    ─────────────────────────────────────────────────────
-    This is a placeholder. The app will be built once the
-    specs in /specs/ are defined. See AGENTS.md for the
-    spec-driven development workflow.
-  -->
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tandem Portfolio</title>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Leaflet (Map view) -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <!-- Chart.js (Compare view) -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+    <!-- Tailwind config — matches tandem-sample-stats / tandem-sample-emb-viewer -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'tandem-blue':          '#0696D7',
+                        'tandem-dark':          '#0D2C54',
+                        'dark-bg':              '#1a1a1a',
+                        'dark-card':            '#2a2a2a',
+                        'dark-border':          '#404040',
+                        'dark-text':            '#e0e0e0',
+                        'dark-text-secondary':  '#a0a0a0',
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        /* Custom scrollbar */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #1a1a1a; }
+        ::-webkit-scrollbar-thumb { background: #404040; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #505050; }
+
+        /* Tab active state */
+        .tab-btn.active {
+            color: #0696D7;
+            border-bottom: 2px solid #0696D7;
+        }
+
+        /* Skeleton shimmer */
+        @keyframes shimmer {
+            0%   { background-position: -400px 0; }
+            100% { background-position: 400px 0; }
+        }
+        .skeleton {
+            background: linear-gradient(90deg, #2a2a2a 25%, #333 50%, #2a2a2a 75%);
+            background-size: 800px 100%;
+            animation: shimmer 1.4s infinite;
+            border-radius: 4px;
+        }
+
+        /* Facility card thumbnail area */
+        .facility-thumbnail {
+            height: 120px;
+            object-fit: cover;
+            width: 100%;
+        }
+
+        /* Leaflet map height */
+        #map-container { height: calc(100vh - 160px); min-height: 400px; }
+    </style>
 </head>
-<body>
-  <p>Specs not yet defined. See <code>specs/overview.md</code> to get started.</p>
+<body class="bg-dark-bg min-h-screen text-dark-text">
+
+    <!-- ── Loading Overlay ────────────────────────────────────── -->
+    <div id="loadingOverlay" class="fixed inset-0 bg-dark-bg bg-opacity-90 flex items-center justify-center z-50">
+        <div class="text-center">
+            <div class="w-12 h-12 border-4 border-tandem-blue border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+            <p class="text-dark-text-secondary text-sm">Loading…</p>
+        </div>
+    </div>
+
+    <!-- ── Navigation Bar ─────────────────────────────────────── -->
+    <nav class="bg-dark-card border-b border-dark-border sticky top-0 z-40">
+        <div class="max-w-screen-xl mx-auto px-4 sm:px-6">
+            <div class="flex items-center justify-between h-14">
+
+                <!-- Logo + Title -->
+                <div class="flex items-center space-x-3 shrink-0">
+                    <div class="w-8 h-8 bg-tandem-blue rounded flex items-center justify-center">
+                        <!-- Building grid icon -->
+                        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                  d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>
+                            <polyline stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                      points="9 22 9 12 15 12 15 22"/>
+                        </svg>
+                    </div>
+                    <h1 class="text-base font-semibold text-dark-text">Tandem Portfolio</h1>
+                </div>
+
+                <!-- Account selector + filter (hidden until logged in) -->
+                <div id="controlBar" class="hidden flex items-center space-x-3">
+                    <label for="accountSelect" class="text-xs font-medium text-dark-text-secondary shrink-0">Account</label>
+                    <select id="accountSelect"
+                            class="block w-48 rounded border border-dark-border bg-dark-bg text-dark-text text-xs py-1.5 px-2 focus:border-tandem-blue focus:outline-none">
+                        <option value="">Select Account…</option>
+                    </select>
+
+                    <input id="facilityFilter" type="search" placeholder="Filter facilities…"
+                           class="block w-44 rounded border border-dark-border bg-dark-bg text-dark-text text-xs py-1.5 px-2 placeholder-dark-text-secondary focus:border-tandem-blue focus:outline-none"/>
+                </div>
+
+                <!-- User actions -->
+                <div class="flex items-center space-x-2 shrink-0">
+                    <button id="loginBtn"
+                            class="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded text-white bg-tandem-blue hover:bg-blue-600 focus:outline-none transition">
+                        Sign In
+                    </button>
+                    <button id="logoutBtn"
+                            class="hidden inline-flex items-center px-3 py-1.5 text-xs font-medium rounded text-dark-text-secondary border border-dark-border hover:bg-dark-card focus:outline-none transition">
+                        Sign Out
+                    </button>
+                    <a id="userProfileLink" href="https://profile.autodesk.com" target="_blank" class="hidden">
+                        <img id="userProfileImg" src="" alt="Profile" class="w-7 h-7 rounded-full border border-dark-border"/>
+                    </a>
+                </div>
+            </div>
+
+            <!-- Tab bar (hidden until logged in) -->
+            <div id="tabBar" class="hidden flex space-x-1 -mb-px">
+                <button data-tab="portfolio"
+                        class="tab-btn active px-4 py-2.5 text-sm font-medium text-dark-text-secondary hover:text-dark-text transition border-b-2 border-transparent">
+                    Portfolio
+                </button>
+                <button data-tab="map"
+                        class="tab-btn px-4 py-2.5 text-sm font-medium text-dark-text-secondary hover:text-dark-text transition border-b-2 border-transparent">
+                    Map
+                </button>
+                <button data-tab="compare"
+                        class="tab-btn px-4 py-2.5 text-sm font-medium text-dark-text-secondary hover:text-dark-text transition border-b-2 border-transparent">
+                    Compare
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- ── Welcome Screen (unauthenticated) ───────────────────── -->
+    <div id="welcomeScreen" class="flex flex-col items-center justify-center min-h-[70vh] px-4">
+        <div class="w-16 h-16 bg-tandem-blue bg-opacity-20 rounded-full flex items-center justify-center mb-6">
+            <svg class="w-8 h-8 text-tandem-blue" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>
+                <polyline stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          points="9 22 9 12 15 12 15 22"/>
+            </svg>
+        </div>
+        <h2 class="text-2xl font-semibold text-dark-text mb-2">Tandem Portfolio</h2>
+        <p class="text-dark-text-secondary text-center max-w-md mb-8">
+            View and compare all your Tandem facilities in one place. Sign in with your Autodesk account to get started.
+        </p>
+        <button onclick="document.getElementById('loginBtn').click()"
+                class="inline-flex items-center px-5 py-2.5 text-sm font-medium rounded text-white bg-tandem-blue hover:bg-blue-600 focus:outline-none transition">
+            Sign In with Autodesk
+        </button>
+    </div>
+
+    <!-- ── App Content (authenticated) ───────────────────────── -->
+    <main id="appContent" class="hidden max-w-screen-xl mx-auto px-4 sm:px-6 py-6">
+
+        <!-- Portfolio View -->
+        <div id="view-portfolio">
+            <!-- Status bar -->
+            <div class="flex items-center justify-between mb-4">
+                <p id="portfolioStatus" class="text-xs text-dark-text-secondary"></p>
+                <p id="portfolioCount" class="text-xs text-dark-text-secondary"></p>
+            </div>
+
+            <!-- Card grid -->
+            <div id="facilityGrid"
+                 class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                <!-- Facility cards rendered by portfolioView.js -->
+            </div>
+
+            <!-- Load more -->
+            <div id="loadMoreContainer" class="hidden text-center mt-8">
+                <button id="loadMoreBtn"
+                        class="px-5 py-2 text-sm font-medium rounded border border-dark-border text-dark-text-secondary hover:bg-dark-card transition">
+                    Load more facilities
+                </button>
+            </div>
+        </div>
+
+        <!-- Map View -->
+        <div id="view-map" class="hidden">
+            <div id="map-container" class="rounded border border-dark-border overflow-hidden"></div>
+            <!-- Unlocated facilities panel rendered by mapView.js -->
+            <div id="unlocatedPanel" class="mt-4"></div>
+        </div>
+
+        <!-- Compare View -->
+        <div id="view-compare" class="hidden">
+            <!-- Rendered by comparisonView.js -->
+            <div id="compareContent"></div>
+        </div>
+
+    </main>
+
+    <!-- App entry point -->
+    <script type="module" src="js/app.js"></script>
 </body>
 </html>
