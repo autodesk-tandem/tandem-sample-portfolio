@@ -37,9 +37,13 @@ export function render(facilities, regionMap) {
     renderUnlocatedPanel();
 }
 
-/** Call when the Map tab becomes visible so Leaflet recalculates its size. */
+/** Call when the Map tab becomes visible so Leaflet recalculates its size and re-fits pins. */
 export function invalidateMapSize() {
-    map?.invalidateSize();
+    if (!map) return;
+    map.invalidateSize();
+    // Re-fit after size is known — the map was hidden when render() first ran
+    const located = allFacilities.filter(f => getLocation(f.urn));
+    if (located.length > 0) fitAll(located);
 }
 
 // ── Map init ──────────────────────────────────────────────────────────────────
@@ -60,6 +64,28 @@ function initMap() {
     // Enable scroll zoom only while the user is interacting with the map
     map.on('click',    () => map.scrollWheelZoom.enable());
     map.on('mouseout', () => map.scrollWheelZoom.disable());
+
+    // "Fit All" custom control (top-left, below zoom buttons)
+    const FitAllControl = L.Control.extend({
+        options: { position: 'topleft' },
+        onAdd() {
+            const btn = L.DomUtil.create('button', 'leaflet-bar leaflet-control');
+            btn.title = 'Zoom to fit all facility pins';
+            btn.style.cssText = [
+                'font-size:11px', 'font-weight:600', 'padding:0 8px',
+                'height:30px', 'cursor:pointer', 'white-space:nowrap',
+                'background:#2a2a2a', 'color:#e0e0e0', 'border:none', 'width:100%'
+            ].join(';');
+            btn.textContent = 'Fit All';
+            L.DomEvent.on(btn, 'click', e => {
+                L.DomEvent.stopPropagation(e);
+                const located = allFacilities.filter(f => getLocation(f.urn));
+                if (located.length) fitAll(located);
+            });
+            return btn;
+        }
+    });
+    new FitAllControl().addTo(map);
 
     // Map click → place confirmed pin (if in placing mode)
     map.on('click', e => {
