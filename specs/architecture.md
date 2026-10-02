@@ -77,18 +77,36 @@ This means the app works immediately (just without map pins for unlocated facili
 
 ## Data Loading Strategy
 
-Facilities can number in the hundreds for large customers. Loading must be efficient.
+Accounts range from a handful of facilities to ~1000 (e.g. a retail chain). Loading must scale.
 
-1. **Lazy load per facility** — fetch list first, then load summary data per facility on demand (not all at once)
-2. **In-memory cache** — `facilityCache.js` holds loaded summaries for the session; switching back to a facility doesn't re-fetch
-3. **Priority loading** — load the currently visible facilities first (visible in list/map viewport)
-4. **No pre-fetching streams** — stream data is expensive; only load when a facility is selected for comparison
+1. **Paginate the facility list** — load 50 at a time; show a "Load more" button or trigger on scroll
+2. **Lazy load per card** — after the facility list arrives, each card fetches its own summary independently
+3. **In-memory cache** — `facilityCache.js` holds loaded summaries for the session; scrolling back doesn't re-fetch
+4. **Priority loading** — cards visible in the viewport load first
+5. **No pre-fetching streams** — stream data is expensive; only load when a facility is selected for comparison
+6. **Thumbnail lazy load** — fetch thumbnails only for cards in or near the viewport; use `getFacilityThumbnail(urn, region)` from `api.js`; call `cleanupThumbnailURLs()` on account switch
 
 ### What counts as a "facility summary"
 - Facility name, URN, model count
-- Stream count and last-seen values (aggregated)
+- Thumbnail (via `GET /twins/{urn}/thumbnail` → blob URL)
+- Stream count
 - Asset count
-- Active alerts / out-of-range streams (hot spots)
+- Hot spot badge data (reserved slot — thresholds TBD)
+
+### Stream matching for comparison (cross-facility)
+
+Facilities may have streams with similar but not identical names (e.g. "Temperature", "Temp (°F)", "Air Temp").
+
+**Strategy — two-phase matching:**
+1. **Semantic grouping**: Normalize stream names (lowercase, strip units, common aliases) and group streams across facilities that likely measure the same thing. Confidence score determines auto-match vs. prompt-for-disambiguation.
+2. **User disambiguation**: When confidence is below threshold, show a grouping UI: "We think these measure the same thing — confirm or reassign." User choices are saved to localStorage per facility pair.
+
+**Normalization rules (initial set — expand as needed):**
+- Strip units in parentheses: `"Temp (°F)"` → `"temp"`
+- Common aliases: temperature/temp, humidity/rh/relative humidity, co2/carbon dioxide, energy/kwh/power
+- Case-insensitive, punctuation-stripped comparison
+
+Implementation lives in `utils/streamMatcher.js`.
 
 ---
 
@@ -120,7 +138,6 @@ window.open(tandemURL, '_blank');
 
 ## Open Questions
 
-- [ ] **Facility count scale** — what is the realistic max number of facilities a user might have? (10? 100? 1000?) This affects pagination and loading strategy.
-- [ ] **Stream aggregation** — for the portfolio summary, do we show the count of active streams, the average value of a chosen stream type, or something else?
-- [ ] **Hot spot thresholds** — are thresholds absolute (e.g. temperature > 80°F) or relative (top 10% outliers across the portfolio)?
-- [ ] **Comparison metrics** — which stream types / properties are candidates for cross-facility comparison? Are these user-selectable or pre-defined?
+- [ ] **Stream aggregation** — for the portfolio summary card, do we show stream count only, or also an aggregate value (e.g. average temp across all temp streams in that facility)?
+- [ ] **Hot spot thresholds** — badge is reserved (see UX spec); exact threshold logic TBD once we see real data
+- [ ] **Comparison metrics** — user-selectable from available stream types; auto-matched via `streamMatcher.js` with user disambiguation available

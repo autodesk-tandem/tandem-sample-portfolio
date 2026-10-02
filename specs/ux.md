@@ -44,23 +44,30 @@ A card grid of all facilities in the selected account.
 Each card shows:
 ```
 ┌────────────────────────────────────┐
-│  🏢 [Facility Name]          [●]   │  ← status dot (green/yellow/red)
+│ [thumbnail image or placeholder]   │
+│────────────────────────────────────│
+│  [Facility Name]         [badge?]  │  ← badge slot reserved for hot spots
 │  ─────────────────────────────     │
 │  Models:   3      Streams:  24     │
-│  Assets:   142    Alerts:   2  ⚠  │
+│  Assets:   142                     │
 │                                    │
-│  Last activity: 2 hours ago        │
 │                         [Open ↗]   │
 └────────────────────────────────────┘
 ```
 
-- **Status dot**: green = all streams nominal, yellow = some out of range, red = critical alerts
-- **Open ↗**: Punch-out link to Tandem UI for that facility (opens new tab)
-- Cards are sorted: red → yellow → green, then alphabetically within each group
+- **Thumbnail**: fetched from `GET /twins/{urn}/thumbnail`; falls back to a generic building placeholder if not available
+- **Badge slot**: reserved for future hot spot indicators — exact design TBD as we see real data. Could be a colored dot, a count badge, an icon, or a highlighted border. The slot is always present in the layout; it starts empty.
+- **Open ↗**: Punch-out link to Tandem UI (opens new tab)
+- Cards are sorted alphabetically by default; sort order may evolve once hot spot logic is defined
+
+### Pagination
+- Show 50 cards at a time with a "Load more" button at the bottom
+- Cards load their own summary data lazily after appearing
 
 ### Loading states
 - Skeleton cards shown while facility list loads
 - Each card loads its own data independently (lazy); shows spinner inside card until ready
+- Thumbnail loads independently — show placeholder until it arrives, then swap in
 - Error state per card (not a full-page error) if a facility fails to load
 
 ### Empty state
@@ -103,8 +110,18 @@ Side-by-side metric comparison across selected facilities.
 Checkbox list of all facilities (max 10 for prototype).
 
 ### Step 2: Select metric
-Dropdown of available stream types found across the selected facilities.
-Example metrics: Temperature, Humidity, Energy Usage, CO₂ Level
+Dropdown of **semantically matched** stream types found across the selected facilities (auto-grouped by `streamMatcher.js`). Example groups: Temperature, Humidity, Energy Usage, CO₂.
+
+If the app is uncertain whether two stream names refer to the same thing, it shows a disambiguation prompt:
+```
+┌─────────────────────────────────────────────────────────┐
+│  We think these streams measure the same thing:         │
+│    • "Temp (°F)"  in  [Building A]                      │
+│    • "Air Temperature"  in  [Building B]                │
+│  [✓ Yes, group them]   [✗ Keep separate]                │
+└─────────────────────────────────────────────────────────┘
+```
+User choices are remembered (localStorage) so the prompt doesn't repeat.
 
 ### Step 3: Results
 - **Bar chart**: One bar per facility showing the current / last-seen value for the chosen metric
@@ -112,11 +129,7 @@ Example metrics: Temperature, Humidity, Energy Usage, CO₂ Level
 - Hot spots highlighted in red/yellow in the table rows
 
 ### Hot spot logic
-- **Red**: Value is > 2 standard deviations from the portfolio mean
-- **Yellow**: Value is > 1 standard deviation from the portfolio mean
-- **Green**: Within normal range
-
-*Note: thresholds are relative (statistical) for the prototype. Absolute thresholds can be added later.*
+Hot spot thresholds are **TBD** — we will define them once we see real data. The UX reserves a visual slot (badge, color, or border highlight) on each row. Statistical defaults (std dev from portfolio mean) are the likely starting point but are not locked in yet.
 
 ---
 
@@ -146,9 +159,6 @@ Example metrics: Temperature, Humidity, Energy Usage, CO₂ Level
 
 ## Open Questions
 
-- [ ] **Facility card thumbnail** — do facilities have thumbnail images accessible via the API? If yes, show them; if not, use a generic building icon.
-- [ ] **Max facilities per account** — if a user has 500 facilities, do we paginate or infinite-scroll the card grid?
-- [ ] **Comparison: absolute vs. relative thresholds** — should users be able to configure thresholds per metric, or is the statistical approach (std dev) sufficient for the prototype?
-- [ ] **Map provider** — Leaflet with OpenStreetMap tiles is the default proposal. Any objection to OpenStreetMap attribution?
-- [ ] **"Set location" UX** — should setting a facility location require clicking on the map, or typing coordinates, or both?
-- [ ] **Compare: stream type selection** — if Facility A has "Temperature" and Facility B calls it "Temp (°F)", how do we match them? By stream name string match, or should the user manually align them?
+- [ ] **"Set location" UX** — should setting a facility's map location be done by clicking on the map, typing lat/lng coordinates, or typing an address (geocoded)? All three are possible with Leaflet.
+- [ ] **Compare: max facilities** — capped at 10 for prototype. Is that enough for a meaningful comparison, or should it be higher?
+- [ ] **Hot spot badge design** — to be decided once we have real data to look at. Placeholder slot is in the layout.
