@@ -47,12 +47,19 @@ export function invalidateMapSize() {
 function initMap() {
     if (map) return;
 
-    map = L.map('map-container', { zoomControl: true }).setView([20, 0], 2);
+    map = L.map('map-container', {
+        zoomControl: true,
+        scrollWheelZoom: false,  // prevent hijacking page scroll
+    }).setView([20, 0], 2);
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
         maxZoom: 19,
     }).addTo(map);
+
+    // Enable scroll zoom only while the user is interacting with the map
+    map.on('click',    () => map.scrollWheelZoom.enable());
+    map.on('mouseout', () => map.scrollWheelZoom.disable());
 
     // Map click → place confirmed pin (if in placing mode)
     map.on('click', e => {
