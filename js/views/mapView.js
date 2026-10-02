@@ -91,25 +91,48 @@ function fitAll(located) {
 // ── Popup ─────────────────────────────────────────────────────────────────────
 
 function buildPopup(facility) {
-    const summary = getCachedSummary(facility.urn);
-    const thumb   = summary?.thumbnailURL
+    const summary  = getCachedSummary(facility.urn);
+    const loc      = getLocation(facility.urn);
+    const thumb    = summary?.thumbnailURL
         ? `<img src="${summary.thumbnailURL}" style="width:100%;height:100px;object-fit:cover;border-radius:4px;margin-bottom:8px;"/>`
         : '';
-    const models  = summary
+    const models   = summary
         ? `<p style="font-size:12px;color:#a0a0a0;margin:0 0 8px;">Models: ${summary.modelCount}</p>`
         : '';
-    const url = tandemFacilityURL(facility.urn);
-    const safeUrn = encodeURIComponent(facility.urn);
+    const tandemUrl = tandemFacilityURL(facility.urn);
+    const safeUrn   = encodeURIComponent(facility.urn);
+
+    // External map links
+    const googleUrl = loc ? `https://www.google.com/maps?q=${loc.lat},${loc.lng}` : null;
+    const appleUrl  = loc ? `https://maps.apple.com/?ll=${loc.lat},${loc.lng}&q=${encodeURIComponent(facility.name)}` : null;
+
+    const externalLinks = (googleUrl && appleUrl) ? `
+        <div style="display:flex;gap:10px;margin:6px 0 2px;">
+            <a href="${googleUrl}" target="_blank" rel="noopener"
+               style="font-size:11px;color:#a0a0a0;text-decoration:none;">
+                🗺 Google Maps ↗
+            </a>
+            <a href="${appleUrl}" target="_blank" rel="noopener"
+               style="font-size:11px;color:#a0a0a0;text-decoration:none;">
+                🍎 Apple Maps ↗
+            </a>
+        </div>` : '';
 
     const div = document.createElement('div');
-    div.style.cssText = 'background:#2a2a2a;color:#e0e0e0;border-radius:6px;padding:10px;min-width:200px;';
+    div.style.cssText = 'background:#2a2a2a;color:#e0e0e0;border-radius:6px;padding:10px;min-width:220px;';
     div.innerHTML = `
         ${thumb}
         <p style="font-size:13px;font-weight:600;margin:0 0 4px;">${escapeHtml(facility.name)}</p>
         ${models}
-        <div style="display:flex;gap:8px;align-items:center;">
-            <a href="${url}" target="_blank" rel="noopener"
+        ${externalLinks}
+        <hr style="border:none;border-top:1px solid #404040;margin:8px 0;"/>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+            <a href="${tandemUrl}" target="_blank" rel="noopener"
                style="font-size:12px;color:#0696D7;text-decoration:none;">Open in Tandem ↗</a>
+            <button onclick="window._mapView.changePin('${safeUrn}')"
+                    style="font-size:11px;color:#a0a0a0;background:none;border:none;cursor:pointer;padding:0;">
+                Change location
+            </button>
             <button onclick="window._mapView.removePin('${safeUrn}')"
                     style="font-size:11px;color:#a0a0a0;background:none;border:none;cursor:pointer;padding:0;margin-left:auto;">
                 Remove pin
@@ -127,6 +150,16 @@ window._mapView = {
         if (m) { map.removeLayer(m); markers.delete(urn); }
         map.closePopup();
         renderUnlocatedPanel();
+    },
+    changePin(encodedUrn) {
+        const urn = decodeURIComponent(encodedUrn);
+        map.closePopup();
+        // Enter placing mode — old pin stays visible until new location is confirmed
+        placingFor = urn;
+        // Scroll the unlocated panel into view so the form is visible
+        const panel = document.getElementById('unlocatedPanel');
+        renderUnlocatedPanel();
+        panel?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 };
 
@@ -138,9 +171,14 @@ function renderUnlocatedPanel() {
 
     const unlocated = allFacilities.filter(f => !getLocation(f.urn));
 
-    if (!unlocated.length) { panel.innerHTML = ''; return; }
+    // The location form should appear if placingFor is set, regardless of whether
+    // the facility is already located (i.e. "Change location" from a popup)
+    const placingFacility = placingFor ? allFacilities.find(f => f.urn === placingFor) : null;
+    const isChanging = placingFacility && getLocation(placingFor); // relocating a pinned facility
 
-    panel.innerHTML = `
+    if (!unlocated.length && !placingFor) { panel.innerHTML = ''; return; }
+
+    const unlocatedSection = unlocated.length ? `
         <details class="border border-dark-border rounded-lg overflow-hidden mt-4" open>
             <summary class="flex items-center justify-between px-4 py-2.5 bg-dark-card
                             cursor-pointer select-none text-sm font-medium text-dark-text-secondary hover:text-dark-text">
@@ -150,7 +188,17 @@ function renderUnlocatedPanel() {
             <div class="divide-y divide-dark-border bg-dark-bg">
                 ${unlocated.map(renderUnlocatedRow).join('')}
             </div>
-        </details>
+        </details>` : '';
+
+    const changingBanner = isChanging ? `
+        <div class="mt-4 px-4 py-2.5 bg-tandem-blue bg-opacity-10 border border-tandem-blue border-opacity-30 rounded-lg text-xs text-tandem-blue">
+            Changing location for <span class="font-semibold">${escapeHtml(placingFacility.name)}</span> —
+            existing pin stays until you confirm a new one.
+        </div>` : '';
+
+    panel.innerHTML = `
+        ${unlocatedSection}
+        ${changingBanner}
         ${placingFor ? renderLocationForm() : ''}`;
 
     panel.querySelectorAll('[data-set-location]').forEach(btn =>
