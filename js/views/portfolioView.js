@@ -241,8 +241,9 @@ function buildThumbPlaceholder() {
 
 function tandemFacilityURL(urn) {
     // e.g. https://tandem.autodesk.com/pages/facilities/urn:adsk.dtt:xxxxx
+    // URN is NOT encoded — Tandem expects the raw URN in the path
     const base = getEnv().tandemAppBaseURL.replace('/app', '');
-    return `${base}/pages/facilities/${encodeURIComponent(urn)}`;
+    return `${base}/pages/facilities/${urn}`;
 }
 
 function escapeHtml(str) {

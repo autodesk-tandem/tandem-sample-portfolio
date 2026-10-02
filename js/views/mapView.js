@@ -471,8 +471,9 @@ function tandemIcon(color) {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function tandemFacilityURL(urn) {
+    // URN is NOT encoded — Tandem expects the raw URN in the path
     const base = getEnv().tandemAppBaseURL.replace('/app', '');
-    return `${base}/pages/facilities/${encodeURIComponent(urn)}`;
+    return `${base}/pages/facilities/${urn}`;
 }
 
 function escapeHtml(str) {
