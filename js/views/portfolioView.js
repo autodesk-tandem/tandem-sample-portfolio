@@ -15,10 +15,20 @@ import { getEnv } from '../config.js';
 
 const PAGE_SIZE = 50;
 
-let allFacilities = [];       // full list for the selected account
-let filteredFacilities = [];  // after text filter applied
-let renderedCount = 0;        // how many cards are currently in the DOM
+// Region display labels
+const REGION_LABELS = { us: 'USA', emea: 'EMEA', aus: 'AUS' };
+
+let allFacilities     = [];   // full list for the selected account
+let filteredFacilities = [];  // after filters applied
+let renderedCount     = 0;    // how many cards are currently in the DOM
 let facilityRegionMap = null; // injected by app.js
+
+// Active filter state
+let filterState = { search: '', regions: new Set(), tags: new Set() };
+
+// Callback registered by app.js — called when user clicks "View Details →" on a card
+let _onViewDetails = null;
+export function setViewDetailsCallback(fn) { _onViewDetails = fn; }
 
 const grid        = document.getElementById('facilityGrid');
 const loadMoreBtn = document.getElementById('loadMoreBtn');
@@ -34,31 +44,206 @@ const countEl     = document.getElementById('portfolioCount');
  * @param {Map<string, string>} regionMap - facilityURN → region string
  */
 export function render(facilities, regionMap) {
-    allFacilities = facilities;
+    allFacilities     = facilities;
     facilityRegionMap = regionMap;
-    renderedCount = 0;
+    renderedCount     = 0;
+    filterState       = { search: '', regions: new Set(), tags: new Set() };
 
     cleanupThumbnailURLs();
     grid.innerHTML = '';
 
-    applyFilter(document.getElementById('facilityFilter')?.value ?? '');
+    renderFilterBar();
+    applyFilters();
 }
 
-/**
- * Filter the visible cards by a text query.
- * Called by app.js on every keyup in the filter input.
- * @param {string} query
- */
-export function applyFilter(query) {
-    const q = query.trim().toLowerCase();
-    filteredFacilities = q
-        ? allFacilities.filter(f => f.name.toLowerCase().includes(q))
-        : allFacilities;
+/** Re-run all active filters and refresh the card grid. */
+function applyFilters() {
+    const q = filterState.search.trim().toLowerCase();
+
+    filteredFacilities = allFacilities.filter(f => {
+        // Text search
+        if (q && !f.name.toLowerCase().includes(q)) return false;
+        // Region filter
+        if (filterState.regions.size > 0 && !filterState.regions.has(f.region)) return false;
+        // Tag filter — facility must have ALL selected tags
+        if (filterState.tags.size > 0) {
+            const facilityLabels = new Set((f.labels ?? []).map(l => String(l)));
+            for (const tag of filterState.tags) {
+                if (!facilityLabels.has(tag)) return false;
+            }
+        }
+        return true;
+    });
 
     renderedCount = 0;
     grid.innerHTML = '';
     updateStatusBar();
     renderNextPage();
+}
+
+// ── Filter bar ────────────────────────────────────────────────────────────────
+
+function renderFilterBar() {
+    const bar = document.getElementById('filterBar');
+    if (!bar) return;
+
+    // Collect all unique regions and tags across facilities
+    const allRegions = [...new Set(allFacilities.map(f => f.region).filter(Boolean))].sort();
+    const allTags    = [...new Set(allFacilities.flatMap(f => f.labels ?? []).map(String))].sort();
+
+    bar.innerHTML = `
+        <div class="flex flex-wrap items-center gap-2 py-3">
+            <!-- Search -->
+            <div class="relative">
+                <svg class="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-dark-text-secondary pointer-events-none"
+                     fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z"/>
+                </svg>
+                <input id="filterSearch" type="search" placeholder="Search facilities…"
+                       value="${escapeHtml(filterState.search)}"
+                       class="pl-7 pr-3 py-1.5 w-52 text-xs rounded border border-dark-border bg-dark-bg
+                              text-dark-text placeholder-dark-text-secondary focus:border-tandem-blue focus:outline-none"/>
+            </div>
+
+            <!-- Region filter -->
+            ${allRegions.length > 1 ? `
+            <div class="relative" id="regionDropdownWrap">
+                <button id="regionBtn"
+                        class="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded border
+                               ${filterState.regions.size ? 'border-tandem-blue text-tandem-blue' : 'border-dark-border text-dark-text-secondary hover:border-tandem-blue hover:text-dark-text'}
+                               bg-dark-bg transition">
+                    Primary Storage Region
+                    ${filterState.regions.size ? `<span class="bg-tandem-blue text-white rounded-full px-1.5">${filterState.regions.size}</span>` : ''}
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                    </svg>
+                </button>
+                <div id="regionDropdown" class="hidden absolute top-full left-0 mt-1 z-30 bg-dark-card border border-dark-border rounded-lg shadow-lg min-w-36 py-1">
+                    ${allRegions.map(r => `
+                        <label class="flex items-center gap-2 px-3 py-1.5 text-xs text-dark-text hover:bg-dark-bg cursor-pointer">
+                            <input type="checkbox" data-region="${r}"
+                                   ${filterState.regions.has(r) ? 'checked' : ''}
+                                   class="accent-tandem-blue"/>
+                            ${REGION_LABELS[r] ?? r.toUpperCase()}
+                        </label>`).join('')}
+                </div>
+            </div>` : ''}
+
+            <!-- Tags filter -->
+            ${allTags.length > 0 ? `
+            <div class="relative" id="tagDropdownWrap">
+                <button id="tagBtn"
+                        class="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded border
+                               ${filterState.tags.size ? 'border-tandem-blue text-tandem-blue' : 'border-dark-border text-dark-text-secondary hover:border-tandem-blue hover:text-dark-text'}
+                               bg-dark-bg transition">
+                    Tags
+                    ${filterState.tags.size ? `<span class="bg-tandem-blue text-white rounded-full px-1.5">${filterState.tags.size}</span>` : ''}
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                    </svg>
+                </button>
+                <div id="tagDropdown" class="hidden absolute top-full left-0 mt-1 z-30 bg-dark-card border border-dark-border rounded-lg shadow-lg min-w-36 py-1">
+                    ${allTags.map(t => `
+                        <label class="flex items-center gap-2 px-3 py-1.5 text-xs text-dark-text hover:bg-dark-bg cursor-pointer">
+                            <input type="checkbox" data-tag="${escapeHtml(t)}"
+                                   ${filterState.tags.has(t) ? 'checked' : ''}
+                                   class="accent-tandem-blue"/>
+                            ${escapeHtml(t)}
+                        </label>`).join('')}
+                </div>
+            </div>` : ''}
+
+            <!-- Active filter pills -->
+            ${[...filterState.regions].map(r => `
+                <span class="inline-flex items-center gap-1 text-xs bg-tandem-blue bg-opacity-20 text-tandem-blue
+                             border border-tandem-blue border-opacity-40 rounded-full px-2.5 py-0.5">
+                    ${REGION_LABELS[r] ?? r.toUpperCase()}
+                    <button data-clear-region="${r}" class="hover:text-white transition leading-none">×</button>
+                </span>`).join('')}
+            ${[...filterState.tags].map(t => `
+                <span class="inline-flex items-center gap-1 text-xs bg-tandem-blue bg-opacity-20 text-tandem-blue
+                             border border-tandem-blue border-opacity-40 rounded-full px-2.5 py-0.5">
+                    ${escapeHtml(t)}
+                    <button data-clear-tag="${escapeHtml(t)}" class="hover:text-white transition leading-none">×</button>
+                </span>`).join('')}
+
+            <!-- Clear all -->
+            ${(filterState.regions.size || filterState.tags.size || filterState.search) ? `
+                <button id="clearAllFilters"
+                        class="text-xs text-dark-text-secondary hover:text-dark-text underline transition ml-1">
+                    Clear all
+                </button>` : ''}
+        </div>`;
+
+    wireFilterBar();
+}
+
+function wireFilterBar() {
+    // Search
+    document.getElementById('filterSearch')?.addEventListener('input', e => {
+        filterState.search = e.target.value;
+        applyFilters();
+    });
+
+    // Region dropdown toggle
+    const regionBtn = document.getElementById('regionBtn');
+    const regionDd  = document.getElementById('regionDropdown');
+    regionBtn?.addEventListener('click', e => { e.stopPropagation(); regionDd?.classList.toggle('hidden'); });
+
+    // Tag dropdown toggle
+    const tagBtn = document.getElementById('tagBtn');
+    const tagDd  = document.getElementById('tagDropdown');
+    tagBtn?.addEventListener('click', e => { e.stopPropagation(); tagDd?.classList.toggle('hidden'); });
+
+    // Close dropdowns on outside click
+    document.addEventListener('click', () => {
+        regionDd?.classList.add('hidden');
+        tagDd?.classList.add('hidden');
+    }, { once: true });
+
+    // Region checkboxes
+    document.querySelectorAll('[data-region]').forEach(cb => {
+        cb.addEventListener('change', () => {
+            cb.checked ? filterState.regions.add(cb.dataset.region) : filterState.regions.delete(cb.dataset.region);
+            applyFilters();
+            renderFilterBar();
+        });
+    });
+
+    // Tag checkboxes
+    document.querySelectorAll('[data-tag]').forEach(cb => {
+        cb.addEventListener('change', () => {
+            cb.checked ? filterState.tags.add(cb.dataset.tag) : filterState.tags.delete(cb.dataset.tag);
+            applyFilters();
+            renderFilterBar();
+        });
+    });
+
+    // Clear region pills
+    document.querySelectorAll('[data-clear-region]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            filterState.regions.delete(btn.dataset.clearRegion);
+            applyFilters();
+            renderFilterBar();
+        });
+    });
+
+    // Clear tag pills
+    document.querySelectorAll('[data-clear-tag]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            filterState.tags.delete(btn.dataset.clearTag);
+            applyFilters();
+            renderFilterBar();
+        });
+    });
+
+    // Clear all
+    document.getElementById('clearAllFilters')?.addEventListener('click', () => {
+        filterState = { search: '', regions: new Set(), tags: new Set() };
+        applyFilters();
+        renderFilterBar();
+    });
 }
 
 // ── Internal helpers ─────────────────────────────────────────────────────────
@@ -112,27 +297,32 @@ function createSkeletonCard(facility) {
         <div class="skeleton h-28 w-full"></div>
 
         <!-- Card body -->
-        <div class="p-3 flex flex-col flex-1 space-y-2">
+        <div class="p-3 flex flex-col flex-1 space-y-1.5">
             <!-- Name + badge slot -->
             <div class="flex items-start justify-between gap-2">
                 <p class="text-sm font-medium text-dark-text leading-tight">${escapeHtml(facility.name)}</p>
                 <span class="facility-badge shrink-0"></span>
             </div>
 
-            <!-- Stats row (skeleton) -->
-            <div class="flex gap-4 mt-1">
-                <div class="skeleton h-3 w-16"></div>
-                <div class="skeleton h-3 w-12"></div>
+            <!-- Stats row: skeletons replaced by real data in populateCard / updateCardStats -->
+            <div class="stats-row flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-dark-text-secondary">
+                <span class="skeleton h-2.5 w-16 rounded inline-block"></span>
+                <span class="skeleton h-2.5 w-16 rounded inline-block"></span>
+                <span class="skeleton h-2.5 w-16 rounded inline-block"></span>
             </div>
 
             <!-- Spacer -->
             <div class="flex-1"></div>
 
-            <!-- Open in Tandem -->
-            <div class="pt-2 border-t border-dark-border flex justify-end">
+            <!-- Footer: View Details + Open in Tandem -->
+            <div class="pt-2 border-t border-dark-border flex items-center justify-between">
+                <button data-view-details="${escapeHtml(facility.urn)}"
+                        class="text-xs text-tandem-blue hover:underline transition">
+                    View Details →
+                </button>
                 <a href="${tandemFacilityURL(facility.urn)}"
                    target="_blank" rel="noopener"
-                   class="inline-flex items-center gap-1 text-xs text-tandem-blue hover:underline">
+                   class="inline-flex items-center gap-1 text-xs text-dark-text-secondary hover:text-tandem-blue transition">
                     Open in Tandem
                     <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -192,7 +382,7 @@ async function loadFacilityData(facility, card) {
 
 /** Replaces skeleton content with real data. */
 function populateCard(card, summary) {
-    // Thumbnail
+    // Thumbnail — replace the FIRST skeleton (the hero image placeholder)
     const thumbEl = card.querySelector('.skeleton');
     if (thumbEl) {
         if (summary.thumbnailURL) {
@@ -207,22 +397,47 @@ function populateCard(card, summary) {
         }
     }
 
-    // Stats row — replace skeletons
-    const statsRow = card.querySelector('.flex.gap-4');
+    // Stats row — replace skeleton spans with model count + stat placeholders
+    const statsRow = card.querySelector('.stats-row');
     if (statsRow) {
         statsRow.innerHTML = `
-            <span class="text-xs text-dark-text-secondary">
-                Models: <span class="text-dark-text font-medium">${summary.modelCount}</span>
-            </span>`;
+            <span>📦 <span class="text-dark-text font-medium">${summary.modelCount}</span> models</span>
+            <span class="stat-streams">📡 <span class="text-dark-text font-medium">–</span></span>
+            <span class="stat-assets">🏷 <span class="text-dark-text font-medium">–</span></span>`;
     }
 
     if (summary.error) showCardError(card);
 }
 
 function showCardError(card) {
-    const statsRow = card.querySelector('.flex.gap-4');
+    const statsRow = card.querySelector('.stats-row');
     if (statsRow) {
         statsRow.innerHTML = `<span class="text-xs text-red-400">Could not load details</span>`;
+    }
+}
+
+/**
+ * Update the stream and asset count badges on a rendered card.
+ * Called by app.js after background stat loading completes for a facility.
+ * @param {string} urn - Facility URN
+ * @param {{streamCount?: number, taggedAssetCount?: number, error?: boolean}} stats
+ */
+export function updateCardStats(urn, stats) {
+    const card = grid.querySelector(`[data-urn="${CSS.escape(urn)}"]`);
+    if (!card) return; // card not rendered (filtered out or not yet loaded)
+
+    if (stats.error) {
+        // Leave placeholders as-is — don't show an error since thumbnail/models loaded fine
+        return;
+    }
+
+    const streamsEl = card.querySelector('.stat-streams');
+    if (streamsEl) {
+        streamsEl.innerHTML = `📡 <span class="text-dark-text font-medium">${stats.streamCount}</span> streams`;
+    }
+    const assetsEl = card.querySelector('.stat-assets');
+    if (assetsEl) {
+        assetsEl.innerHTML = `🏷 <span class="text-dark-text font-medium">${stats.taggedAssetCount}</span> assets`;
     }
 }
 
@@ -250,7 +465,13 @@ function escapeHtml(str) {
     return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-// Wire up the Load More button (called once during app init)
+// Wire up the Load More button and grid event delegation (called once during app init)
 export function initLoadMore() {
     loadMoreBtn?.addEventListener('click', renderNextPage);
+
+    // Delegate "View Details →" clicks from any card in the grid
+    grid.addEventListener('click', e => {
+        const btn = e.target.closest('[data-view-details]');
+        if (btn && _onViewDetails) _onViewDetails(btn.dataset.viewDetails);
+    });
 }

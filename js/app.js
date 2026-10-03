@@ -14,13 +14,21 @@ import { login, logout, checkLogin } from './auth.js';
 import {
     getUserResources,
     getFacilitiesForGroup,
+    getFacilityStats,
     cleanupThumbnailURLs,
 } from './api.js';
 import { RegionLabelMap } from '../tandem/constants.js';
-import { clearFacilityCache } from './state/facilityCache.js';
-import { render as renderPortfolio, applyFilter, initLoadMore } from './views/portfolioView.js';
+import { clearFacilityCache, getCachedSummary, setCachedSummary } from './state/facilityCache.js';
+import {
+    render as renderPortfolio,
+    initLoadMore,
+    setViewDetailsCallback,
+    updateCardStats,
+} from './views/portfolioView.js';
 import { render as renderMap, invalidateMapSize } from './views/mapView.js';
 import { render as renderComparison } from './views/comparisonView.js';
+import * as detailsView from './views/detailsView.js';
+import * as accessView  from './views/accessView.js';
 
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 const loginBtn        = document.getElementById('loginBtn');
@@ -28,7 +36,7 @@ const logoutBtn       = document.getElementById('logoutBtn');
 const userProfileLink = document.getElementById('userProfileLink');
 const userProfileImg  = document.getElementById('userProfileImg');
 const accountSelect   = document.getElementById('accountSelect');
-const facilityFilter  = document.getElementById('facilityFilter');
+
 const welcomeScreen   = document.getElementById('welcomeScreen');
 const appContent      = document.getElementById('appContent');
 const controlBar      = document.getElementById('controlBar');
@@ -179,6 +187,7 @@ function extractFacilities(obj) {
         urn,
         name:   settings?.props?.['Identity Data']?.['Building Name'] || 'Unnamed Facility',
         region: settings?.region || 'us',
+        labels: settings?.props?.['Other']?.['tags'] ?? [],
     }));
 }
 
@@ -217,11 +226,109 @@ async function switchAccount(accountName) {
     renderPortfolio(facilities, facilityRegionMap);
     renderMap(facilities, facilityRegionMap);
     renderComparison(facilities, facilityRegionMap);
+    detailsView.renderEmpty();
+    accessView.render(facilities, facilityRegionMap);
+    _activityPlaceholderShown = false; // reset so placeholder re-renders on next visit
+    document.getElementById('activityContent').innerHTML = '';
+
+    // If the user is already on the Access tab, start loading immediately
+    if (currentTab === 'access') accessView.activate();
+
+    // Kick off background stat loading (streams + tagged assets per card)
+    // Non-blocking: cards show "–" placeholders until each facility resolves
+    loadAllFacilityStats(facilities, accountName).catch(err =>
+        console.warn('Background stat loading error:', err)
+    );
+}
+
+/**
+ * Open the Details tab for a specific facility URN.
+ * Wired to the "View Details →" button on portfolio cards.
+ */
+function openDetails(urn) {
+    const account  = accounts.find(a => a.name === currentAccountName);
+    const facility = account?.facilities?.find(f => f.urn === urn);
+    if (!facility) return;
+    const region = facilityRegionMap.get(urn) ?? facility.region ?? 'us';
+    detailsView.render(facility, region);
+    switchTab('details');
+}
+
+/**
+ * Activity tab — placeholder until the feature is implemented.
+ * Only renders once per tab visit (idempotent after first paint).
+ */
+let _activityPlaceholderShown = false;
+function showActivityPlaceholder() {
+    const el = document.getElementById('activityContent');
+    if (!el || _activityPlaceholderShown) return;
+    _activityPlaceholderShown = true;
+
+    el.innerHTML = `
+        <div class="flex flex-col items-center justify-center py-24 text-dark-text-secondary gap-4 max-w-lg mx-auto text-center">
+            <svg class="w-12 h-12 text-dark-border" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                      d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+            <div>
+                <p class="text-sm font-semibold text-dark-text mb-1">Recent Activity — Coming Soon</p>
+                <p class="text-xs leading-relaxed">
+                    This tab will surface a cross-facility activity feed: who changed what,
+                    when, and in which facility — with a summary roll-up and a drill-down
+                    into facility-level and model-level history.
+                </p>
+            </div>
+            <div class="mt-2 grid grid-cols-2 gap-3 w-full text-left text-xs">
+                <div class="bg-dark-card border border-dark-border rounded p-3">
+                    <p class="font-semibold text-dark-text mb-1">📋 Planned: Summary feed</p>
+                    <p class="text-dark-text-secondary">Recent ACL changes, model imports, and property edits rolled up across all facilities.</p>
+                </div>
+                <div class="bg-dark-card border border-dark-border rounded p-3">
+                    <p class="font-semibold text-dark-text mb-1">🔍 Planned: Drill-down</p>
+                    <p class="text-dark-text-secondary">Click any facility to see its twin history + per-model history, similar to the tandem-sample-stats view.</p>
+                </div>
+            </div>
+        </div>`;
+}
+
+/**
+ * Load stream count + tagged asset count for every facility in the list.
+ * Uses a concurrency window (5 at a time) to avoid hammering the API.
+ * Aborts silently if the account changes mid-load.
+ *
+ * @param {Array<{urn: string}>} facilities
+ * @param {string} accountAtStart - snapshot of currentAccountName when loading began
+ */
+async function loadAllFacilityStats(facilities, accountAtStart) {
+    const CONCURRENCY = 5;
+    let cursor = 0;
+
+    async function worker() {
+        while (cursor < facilities.length) {
+            if (currentAccountName !== accountAtStart) return; // account switched — abort
+            const f = facilities[cursor++];
+            const region = facilityRegionMap.get(f.urn) ?? f.region ?? 'us';
+            try {
+                const stats = await getFacilityStats(f.urn, region);
+                // Merge stats into the summary cache
+                const cached = getCachedSummary(f.urn);
+                if (cached) setCachedSummary(f.urn, { ...cached, ...stats, statsLoaded: true });
+                // Update the card DOM badge (no-op if card isn't rendered yet)
+                updateCardStats(f.urn, stats);
+            } catch (err) {
+                console.warn(`Stats load failed for ${f.name}:`, err);
+                updateCardStats(f.urn, { error: true });
+            }
+        }
+    }
+
+    // Launch CONCURRENCY workers simultaneously
+    await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()));
 }
 
 // ── Tab switching ─────────────────────────────────────────────────────────────
 
-const TABS = ['portfolio', 'map', 'compare'];
+const TABS = ['portfolio', 'map', 'details', 'access', 'compare', 'activity'];
 
 function switchTab(tabId) {
     currentTab = tabId;
@@ -237,7 +344,11 @@ function switchTab(tabId) {
     });
 
     // Leaflet needs a size hint when its container becomes visible
-    if (tabId === 'map') invalidateMapSize();
+    if (tabId === 'map')      invalidateMapSize();
+    // Access graph loads lazily on first visit
+    if (tabId === 'access')   accessView.activate();
+    // Activity view: show placeholder until implemented
+    if (tabId === 'activity') showActivityPlaceholder();
 }
 
 // ── Application init ──────────────────────────────────────────────────────────
@@ -256,15 +367,17 @@ async function initialize() {
         await switchAccount(name);
     });
 
-    // Event: facility filter
-    facilityFilter?.addEventListener('input', e => applyFilter(e.target.value));
+    // Filter events are wired inside portfolioView.js (filter bar is rendered there)
 
     // Event: tab buttons
     document.querySelectorAll('.tab-btn').forEach(btn => {
         btn.addEventListener('click', () => switchTab(btn.dataset.tab));
     });
 
-    // Event: load more button
+    // Event: "View Details →" on portfolio cards
+    setViewDetailsCallback(openDetails);
+
+    // Event: load more button + grid click delegation
     initLoadMore();
 
     // Event: cleanup blob URLs on page unload

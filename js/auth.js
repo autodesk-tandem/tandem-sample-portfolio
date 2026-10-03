@@ -59,7 +59,14 @@ async function doRedirection(clientId, scope) {
   url.searchParams.append('code_challenge', challenge);
   url.searchParams.append('code_challenge_method', 'S256');
 
-  console.log('OAuth URL:', url.toString());
+  // Log the full URL so it's easy to check each parameter against the APS portal
+  console.group('🔐 OAuth redirect details — verify these match your APS app config');
+  console.log('Client ID:    ', clientId);
+  console.log('Redirect URI: ', redirect_uri);
+  console.log('Scope:        ', scope);
+  console.log('Full URL:     ', url.toString());
+  console.groupEnd();
+
   location.href = url.toString();
 }
 

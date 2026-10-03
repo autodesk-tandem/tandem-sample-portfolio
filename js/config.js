@@ -4,8 +4,8 @@ const prodEnvironment = {
   name: "prod",
   oxygenHost: "https://accounts.autodesk.com",
   apsHost: "https://developer.api.autodesk.com",
-  apsKey: "GiedMKsyhXTTG34RZR9KSEGbAgjxSIJm45sJASP9EjOQSAX8", // Safe to commit - this app uses PKCE (see README for details)
-  loginRedirect: "http://localhost:8000",
+  apsKey: "HW8WP88fTHJwr5c7HXRlGh6yBuwPMyc3OWZrb9zQklD9CASD", // Safe to commit - this app uses PKCE (see README for details)
+  loginRedirect: "http://localhost:8001",
   tandemDbBaseURL: "https://developer.api.autodesk.com/tandem/v1",
   tandemAppBaseURL: "https://tandem.autodesk.com/app",
 };

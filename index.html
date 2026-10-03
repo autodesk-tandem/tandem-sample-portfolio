@@ -15,6 +15,9 @@
     <!-- Chart.js (Compare view) -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 
+    <!-- D3 v7 (Access graph view) -->
+    <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+
     <!-- Tailwind config — matches tandem-sample-stats / tandem-sample-emb-viewer -->
     <script>
         tailwind.config = {
@@ -99,16 +102,13 @@
                     <h1 class="text-base font-semibold text-dark-text">Tandem Portfolio</h1>
                 </div>
 
-                <!-- Account selector + filter (hidden until logged in) -->
+                <!-- Account selector (hidden until logged in) -->
                 <div id="controlBar" class="hidden flex items-center space-x-3">
                     <label for="accountSelect" class="text-xs font-medium text-dark-text-secondary shrink-0">Account</label>
                     <select id="accountSelect"
                             class="block w-48 rounded border border-dark-border bg-dark-bg text-dark-text text-xs py-1.5 px-2 focus:border-tandem-blue focus:outline-none">
                         <option value="">Select Account…</option>
                     </select>
-
-                    <input id="facilityFilter" type="search" placeholder="Filter facilities…"
-                           class="block w-44 rounded border border-dark-border bg-dark-bg text-dark-text text-xs py-1.5 px-2 placeholder-dark-text-secondary focus:border-tandem-blue focus:outline-none"/>
                 </div>
 
                 <!-- User actions -->
@@ -137,9 +137,21 @@
                         class="tab-btn px-4 py-2.5 text-sm font-medium text-dark-text-secondary hover:text-dark-text transition border-b-2 border-transparent">
                     Map
                 </button>
+                <button data-tab="details"
+                        class="tab-btn px-4 py-2.5 text-sm font-medium text-dark-text-secondary hover:text-dark-text transition border-b-2 border-transparent">
+                    Details
+                </button>
+                <button data-tab="access"
+                        class="tab-btn px-4 py-2.5 text-sm font-medium text-dark-text-secondary hover:text-dark-text transition border-b-2 border-transparent">
+                    Access
+                </button>
                 <button data-tab="compare"
                         class="tab-btn px-4 py-2.5 text-sm font-medium text-dark-text-secondary hover:text-dark-text transition border-b-2 border-transparent">
                     Compare
+                </button>
+                <button data-tab="activity"
+                        class="tab-btn px-4 py-2.5 text-sm font-medium text-dark-text-secondary hover:text-dark-text transition border-b-2 border-transparent">
+                    Activity
                 </button>
             </div>
         </div>
@@ -170,6 +182,9 @@
 
         <!-- Portfolio View -->
         <div id="view-portfolio">
+            <!-- Filter bar (rendered by portfolioView.js) -->
+            <div id="filterBar" class="border-b border-dark-border mb-4"></div>
+
             <!-- Status bar -->
             <div class="flex items-center justify-between mb-4">
                 <p id="portfolioStatus" class="text-xs text-dark-text-secondary"></p>
@@ -198,10 +213,28 @@
             <div id="unlocatedPanel" class="mt-4"></div>
         </div>
 
+        <!-- Details View -->
+        <div id="view-details" class="hidden">
+            <!-- Rendered by detailsView.js -->
+            <div id="detailsContent"></div>
+        </div>
+
+        <!-- Access Graph View -->
+        <div id="view-access" class="hidden">
+            <!-- Rendered by accessView.js -->
+            <div id="accessContent"></div>
+        </div>
+
         <!-- Compare View -->
         <div id="view-compare" class="hidden">
             <!-- Rendered by comparisonView.js -->
             <div id="compareContent"></div>
+        </div>
+
+        <!-- Activity View -->
+        <div id="view-activity" class="hidden">
+            <!-- Rendered by activityView.js (not yet implemented) -->
+            <div id="activityContent"></div>
         </div>
 
     </main>

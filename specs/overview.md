@@ -18,6 +18,49 @@ Typically these are Facility Managers or Property Managers.  People that handle 
 1. See a full list of all Facilities they are managing
 2. Locate them on a map
 3. Compare performance, cost, energy usage, or any other measurement that might be high-value to see across your portfolio of facilties.
+4. Understand who has access to which facilities (Access tab — user-facility bipartite graph).
+5. See recent activity across all facilities — what changed, who changed it, and when (Activity tab — planned).
+
+## Tabs (current + planned)
+
+| Tab | Status | Description |
+|-----|--------|-------------|
+| Portfolio | ✅ Live | Card grid of all facilities; stream + tagged-asset badge counts; "View Details →" drill-down |
+| Map | ✅ Live | Leaflet map showing facility locations |
+| Details | ✅ Live | Per-facility drill-down: streams list and tagged assets breakdown |
+| Access | ✅ Live | D3 force-directed bipartite graph — users/apps ↔ facilities; click nodes to inspect |
+| Compare | 🔲 Stub | Cross-facility property comparison (not yet implemented) |
+| Activity | 🔲 Stub | Cross-facility recent-activity feed (see below) |
+
+## Activity Tab — Feature Design Notes
+
+### Goal
+Surface a unified "what happened recently across my portfolio?" view so facility managers can spot unexpected changes, track onboarding progress, or audit who is modifying data.
+
+### Data sources
+Both endpoints are already used in `tandem-sample-stats`:
+- **Twin history** — `POST /twins/{urn}/history` — ACL changes (users added/removed, access-level changes)
+- **Model history** — `POST /modeldata/{modelURN}/history` — property edits, imports, stream config changes
+
+### Proposed UX (two-level)
+
+**Level 1 — Summary feed (cross-facility)**
+- Load the last N days of twin history for every facility in the account (concurrency-limited like the stats loader)
+- Aggregate into a single timeline sorted by timestamp descending
+- Each row: `[timestamp] [facility name] [change type] [actor]`
+- Filter controls: date range, change type (ACL / model / property), facility
+- Performance note: twin history is lightweight; model history is heavier — load model history lazily (on drill-down only)
+
+**Level 2 — Drill-down (per-facility)**
+- Click a row (or a facility name) → expand an inline panel or navigate to a facility-scoped view
+- Shows: twin history section + model history section (one accordion per model), matching the layout in `tandem-sample-stats`
+- "Open in Tandem ↗" link at the bottom
+
+### Implementation hints
+- Reuse `getTwinHistory(facilityURN, region, options)` and `getHistory(modelURN, region, options)` from `js/api.js`
+- Use the same 5-worker concurrency pool pattern from the stats loader / access view
+- Cache results keyed by `(accountName, facilityURN)` — history changes, but no need to re-fetch on every tab switch
+- The actor field in history entries is a user ID — resolve to display name using the `_userMap` built by the Access view (already has `userId → name` for all facility users)
 
 ## Out of Scope
 

@@ -1687,6 +1687,26 @@ export async function getFacilityViews(facilityURN, region) {
   }
 }
 
+/**
+ * Get quick stats for a facility card badge: stream count + tagged asset count.
+ * Both queries run in parallel for efficiency.
+ * @param {string} facilityURN - Facility URN
+ * @param {string} region - Region identifier
+ * @returns {Promise<{streamCount: number, taggedAssetCount: number}>}
+ */
+export async function getFacilityStats(facilityURN, region) {
+  try {
+    const [streams, taggedAssetCount] = await Promise.all([
+      getStreams(facilityURN, region),
+      getTaggedAssetsCount(facilityURN, region),
+    ]);
+    return { streamCount: streams.length, taggedAssetCount };
+  } catch (err) {
+    console.error('Error fetching facility stats:', err);
+    return { streamCount: 0, taggedAssetCount: 0 };
+  }
+}
+
 export async function getModelProperties(modelURN, region) {
   try {
     const requestPath = `${tandemBaseURL}/models/${modelURN}/props`;
