@@ -1,135 +1,177 @@
 # UX Spec
 
-> **Status:** Proposed — awaiting review  
-> **Last updated:** 2026-10-02  
+> **Status:** Implemented — reflects built state as of 2026-10-05  
+> **Last updated:** 2026-10-05  
 > **Role:** UX
 
 ---
 
 ## Design Principles
 
-- **Data-first, not decorator-first** — show real numbers prominently; don't hide data behind interactions
-- **Scannable at a glance** — a user managing 50 facilities needs to spot problems in seconds
-- **Progressive detail** — portfolio → facility summary → punch-out to Tandem for deep detail
-- **Consistent with Tandem** — dark theme, Tandem blue accent, same visual language as `tandem-sample-stats`
+- **Data-first** — real numbers prominently; don't hide data behind interactions
+- **Scannable at a glance** — a manager with 50 facilities needs to spot problems in seconds
+- **Progressive detail** — portfolio → facility summary → punch-out for deep detail
+- **Consistent with Tandem** — dark theme, Tandem blue accent, SVG icons (no emoji)
 
 ---
 
-## Navigation Structure
+## Navigation
 
-Top tab bar with three primary views. No sidebar (keeps it simple for a prototype).
+Top tab bar, always visible. Account selector in the top bar.
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│  [Tandem Logo]  tandem-sample-portfolio         [User] [Logout]│
-├──────────────────────────────────────────────────────────────┤
-│  Account: [dropdown]   Facility filter: [search box]          │
-├────────────────┬──────────────┬──────────────────────────────┤
-│  Portfolio     │  Map         │  Compare                      │
-│  (list/cards)  │  (geo view)  │  (metrics across facilities)  │
-└────────────────┴──────────────┴──────────────────────────────┘
+┌───────────────────────────────────────────────────────────────────┐
+│  [Tandem Logo]  Tandem Portfolio    Account: [▼]      [Sign Out]  │
+├─────────┬───────┬────────┬─────────┬──────────┬────────────────── │
+│Portfolio│  Map  │ Access │ Compare │ Activity │ Accounts          │
+└─────────┴───────┴────────┴─────────┴──────────┴───────────────────┘
 ```
-
-**Header always visible** with:
-- Account selector (same pattern as `tandem-sample-stats`)
-- Facility text filter (filters what's shown in the active view)
 
 ---
 
-## View 1: Portfolio (default view)
+## Portfolio Tab (default)
 
-A card grid of all facilities in the selected account.
-
-### Facility Card
-Each card shows:
+### Account metrics banner
+Shown below the filter bar, above the facility grid. Loads asynchronously on account switch.
 ```
-┌────────────────────────────────────┐
-│ [thumbnail image or placeholder]   │
-│────────────────────────────────────│
-│  [Facility Name]         [badge?]  │  ← badge slot reserved for hot spots
-│  ─────────────────────────────     │
-│  Models:   3      Streams:  24     │
-│  Assets:   142                     │
-│                                    │
-│                         [Open ↗]   │
-└────────────────────────────────────┘
+Account totals:  • Facilities 4  • Models 38  • Streams 2,343  • Assets 1,465
+                 • Connections 9,675  • Elements 201,068  • Storage 752.2 MB
+                                                               as of Oct 5, 2026
 ```
+- Color-coded dots per metric
+- "as of [date]" from `metrics.updatedOn` — explains why totals may lag real-time counts
+- 403-forbidden accounts show amber warning instead of zeros
 
-- **Thumbnail**: fetched from `GET /twins/{urn}/thumbnail`; falls back to a generic building placeholder if not available
-- **Badge slot**: reserved for future hot spot indicators — exact design TBD as we see real data. Could be a colored dot, a count badge, an icon, or a highlighted border. The slot is always present in the layout; it starts empty.
-- **Open ↗**: Punch-out link to Tandem UI (opens new tab)
-- Cards are sorted alphabetically by default; sort order may evolve once hot spot logic is defined
+### Grid view (default)
+50 cards per page, "Load more" button at bottom. Each card:
+```
+┌──────────────────────────────┐
+│  [thumbnail or placeholder]  │
+│──────────────────────────────│
+│  Facility Name               │
+│  Region                      │
+│  ∿ 24 streams   ▣ 142 assets │
+│──────────────────────────────│
+│  Open in Stats ↗  Open in Tandem ↗ │
+└──────────────────────────────┘
+```
+- Skeleton cards shown while data loads
+- Stats (streams, assets) load asynchronously and fill in
 
-### Pagination
-- Show 50 cards at a time with a "Load more" button at the bottom
-- Cards load their own summary data lazily after appearing
+### Leaderboard view (toggle)
+Grid/leaderboard toggle buttons in the filter bar (right side).
 
-### Loading states
-- Skeleton cards shown while facility list loads
-- Each card loads its own data independently (lazy); shows spinner inside card until ready
-- Thumbnail loads independently — show placeholder until it arrives, then swap in
-- Error state per card (not a full-page error) if a facility fails to load
+**Sort by: Streams | Tagged Assets | Template**
 
-### Empty state
-If the account has no facilities:
-> "No facilities found in this account. Create facilities in Tandem to get started."
+- **Streams / Assets sort**: rows ranked descending; both Streams bar and Assets bar shown per row; active sort metric highlighted
+- **Template sort**: facilities grouped under blue section headers by template name; no numeric bars; "No template applied" group last
+
+### Filter bar
+- Text search (facility name)
+- Tags filter (region, etc.)
+- Grid/leaderboard toggle
 
 ---
 
-## View 2: Map
+## Map Tab
 
-Interactive map showing all facilities as pins.
+Leaflet map with facility pins.
 
-### Map behavior
-- Pins are color-coded: green / yellow / red (same scheme as portfolio cards)
-- Clicking a pin opens a popup with the facility card summary + "Open in Tandem" link
-- Facilities without a location show in a "Unlocated" list below the map
-- User can click "Set location" on any facility to drop a pin manually (saved to localStorage)
+- **Blue pin**: facility has a saved location
+- **Gray**: facility not yet located
+- Click pin → popup with facility name, region, stream/asset counts, "Open in Stats" link
 
-### Map controls
-- Zoom to fit all located facilities on load
-- Standard zoom/pan
-- "Locate all" button resets to fit-all view
-
-### Unlocated panel
-Below the map, a collapsible panel:
+### Unlocated panel (below map)
+Collapsible list of facilities without coordinates:
 ```
 ▼ Unlocated facilities (3)
-  [Facility A]  [Set location]
-  [Facility B]  [Set location]
-  [Facility C]  [Set location]
+  Boston Tech Center    [Set location]
+  SF Gallery            [Set location]
 ```
+
+### Location form (inline)
+Clicking "Set location" inserts a form **directly below that facility's row** (not at page bottom):
+- Address field pre-populated from Tandem metadata if available
+- "Geocode" button uses Nominatim (OpenStreetMap — no API key)
+- OR click on the map to drop a pin
+- Cancel re-renders the unlocated panel (does not leave a dead form)
+- Form scrolls into view automatically
 
 ---
 
-## View 3: Compare
+## Access Tab
 
-Side-by-side metric comparison across selected facilities.
+D3 force-directed bipartite graph: users/apps on one side, facilities on the other.
+- Click a node to inspect its connections
+- Lazy-loads on first tab visit
 
-### Step 1: Select facilities
-Checkbox list of all facilities (max 10 for prototype).
+---
 
-### Step 2: Select metric
-Dropdown of **semantically matched** stream types found across the selected facilities (auto-grouped by `streamMatcher.js`). Example groups: Temperature, Humidity, Energy Usage, CO₂.
+## Compare Tab
 
-If the app is uncertain whether two stream names refer to the same thing, it shows a disambiguation prompt:
-```
-┌─────────────────────────────────────────────────────────┐
-│  We think these streams measure the same thing:         │
-│    • "Temp (°F)"  in  [Building A]                      │
-│    • "Air Temperature"  in  [Building B]                │
-│  [✓ Yes, group them]   [✗ Keep separate]                │
-└─────────────────────────────────────────────────────────┘
-```
-User choices are remembered (localStorage) so the prompt doesn't repeat.
+### Facility selector
+Pill-based multi-select (up to 6 facilities). Searchable dropdown for adding.
+Each pill colored distinctly; click ✕ to remove. Default: first 4 facilities pre-selected.
 
-### Step 3: Results
-- **Bar chart**: One bar per facility showing the current / last-seen value for the chosen metric
-- **Table below chart**: Facility name | Current value | Min | Max | Avg | Status
-- Hot spots highlighted in red/yellow in the table rows
+### Side-by-side table
+Columns = selected facilities. Rows:
+| Metric | Notes |
+|--------|-------|
+| Models | From facility info cache |
+| Streams | Loading spinner until stats arrive |
+| Tagged Assets | Loading spinner until stats arrive |
+| Template | From template cache |
+| Region | From region map |
 
-### Hot spot logic
-Hot spot thresholds are **TBD** — we will define them once we see real data. The UX reserves a visual slot (badge, color, or border highlight) on each row. Statistical defaults (std dev from portfolio mean) are the likely starting point but are not locked in yet.
+Outlier cells highlighted:
+- 🔴 **▲** red — significantly above account average (≥1.5σ)
+- 🟡 **▼** amber — significantly below account average (≥1.5σ)
+
+### Portfolio outlier panel (below table)
+Scans ALL facilities in the account (not just selected). Shows alert cards for any facility
+≥1.5σ from the mean on Streams, Tagged Assets, or Models. Updates progressively as stats load.
+Requires at least 3 loaded facilities for meaningful statistics.
+
+---
+
+## Activity Tab
+
+Cross-facility recent-activity feed. Lazy-loads on first tab visit.
+
+- One row per facility, sorted by most-recently-active
+- Each row: status dot (🟢 <7d, 🟡 7–30d, ⚫ >30d) + last-activity timestamp + stream health chip
+- Stream health chip uses waveform SVG icon (not emoji)
+- Click a row → drill-down panel with twin history + model history + stream health detail
+- Filters out `metrics_update` system events (not user-triggered)
+
+---
+
+## Accounts Tab
+
+Cross-account leaderboard. Lazy-loads on first tab visit.
+
+- Fetches `GET /groups/{urn}/metrics` for all accounts (concurrency-5 pool)
+- Sort by: **Facilities · Models · Streams · Assets · Connections · Elements · Storage**
+- Each row: rank, account name, all 7 metric values as columns, bar for active sort metric
+- 403-forbidden accounts: dimmed, "No access" warning, sorted to bottom, rank shown as "—"
+- Skips "Shared Directly" pseudo-account (no real group URN)
+
+---
+
+## Icon System
+
+SVG icons throughout — no emoji.
+
+| Concept | Icon |
+|---------|------|
+| Models | Wireframe 3D box (cube with hidden lines) |
+| Streams | Waveform / signal line |
+| Assets | Document with lines (tagged list) |
+| Template | Document with star |
+| Facilities | House/building outline |
+| Elements | Horizontal lines |
+| Connections | Node graph |
+| Storage | Cylinder (database) |
 
 ---
 
@@ -137,28 +179,18 @@ Hot spot thresholds are **TBD** — we will define them once we see real data. T
 
 | Situation | Behavior |
 |-----------|----------|
-| Auth not complete | Show login screen (same as reference apps) |
-| Loading facility list | Skeleton cards in Portfolio view |
-| Loading individual facility data | Spinner inside that facility's card |
-| Facility API error | Card shows error message, retry button |
-| No streams for a facility | Card shows "No stream data" badge |
-| No facilities in account | Empty state message (see above) |
-| Switching accounts | Clear all loaded data, reload for new account |
+| Auth not complete | Login screen with "Sign In with Autodesk" button |
+| Loading facility list | Skeleton cards with animated pulse |
+| Loading individual card | Spinner inside card until ready |
+| Facility API error | Card shows error message (not full-page error) |
+| Switching accounts | Clear all cached data; reload for new account; abort in-flight requests |
+| Tab switch (lazy tab) | Show skeleton/loading state on first visit; cached on subsequent visits |
 
 ---
 
 ## Responsive / Accessibility
 
-- **Desktop-first** for prototype (primary users are on desktop)
-- Grid adapts: 3 columns → 2 → 1 as viewport narrows
-- Keyboard navigation for dropdowns and facility selection
-- Color is never the only indicator (status dots also have text/icons)
-- Dark mode only for prototype (matches reference apps)
-
----
-
-## Open Questions
-
-- [x] **"Set location" UX** — three options: (1) click on the map to drop a pin, (2) type lat/lng coordinates manually, (3) geocode by address. The facility's address (from `Identity Data.Address` in Tandem metadata) is pre-populated in the address field automatically. Geocoding uses Nominatim (OpenStreetMap, free, no API key).
-- [ ] **Compare: max facilities** — capped at 10 for prototype. Is that enough for a meaningful comparison, or should it be higher?
-- [ ] **Hot spot badge design** — to be decided once we have real data to look at. Placeholder slot is in the layout.
+- Desktop-first (primary users are on desktop)
+- Card grid adapts: 3 columns → 2 → 1 as viewport narrows
+- Color is never the only indicator (outlier arrows have directional text, status dots have labels)
+- Dark mode only (matches reference apps)

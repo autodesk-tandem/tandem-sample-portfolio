@@ -257,24 +257,34 @@ async function switchAccount(accountName) {
  * Open the tandem-sample-stats companion app in a new tab, pre-selecting
  * the current account and the clicked facility.
  *
- * Cookies on localhost are shared across ports (port is not part of the cookie
- * domain), so we write three one-shot cookies that stats reads on startup:
- *   tandem_shared_token    — reuses the current session, no re-login required
- *   tandem_deeplink_account / tandem_deeplink_facility — pre-select dropdowns
+ * Deeplink mechanism — two complementary approaches:
  *
- * Wired to the "View Details →" button on portfolio cards.
+ * 1. Hash params (works cross-origin, e.g. localhost → github.io):
+ *    Stats reads the hash before OAuth fires and saves to sessionStorage,
+ *    so account + facility survive the auth redirect.
+ *      https://…/tandem-sample-stats/#account=NAME&facility=URN
+ *
+ * 2. Cookies (bonus, localhost only — same domain across ports):
+ *    Also writes one-shot cookies so stats can reuse the session token and
+ *    skip re-authentication entirely when both apps are on localhost.
+ *
+ * Wired to the "Open in Stats" button on portfolio cards.
  */
 function openDetails(urn) {
     const statsBase = getEnv().statsAppURL ?? 'http://localhost:8000';
 
-    // One-shot cookies (max-age=60s — enough to survive the new tab opening;
-    // stats clears them immediately after reading).
+    // Build URL with hash-param deeplink (cross-origin safe)
+    const hash = `#account=${encodeURIComponent(currentAccountName)}&facility=${encodeURIComponent(urn)}`;
+    const statsURL = statsBase.replace(/#.*$/, '') + hash;
+
+    // Also write cookies for localhost (same domain → no re-auth needed).
+    // These are harmless no-ops on cross-origin deployments.
     const cookieOpts = 'path=/; max-age=60; SameSite=Lax';
     document.cookie = `tandem_shared_token=${encodeURIComponent(window.sessionStorage.token ?? '')};${cookieOpts}`;
     document.cookie = `tandem_deeplink_account=${encodeURIComponent(currentAccountName)};${cookieOpts}`;
     document.cookie = `tandem_deeplink_facility=${encodeURIComponent(urn)};${cookieOpts}`;
 
-    window.open(statsBase, '_blank');
+    window.open(statsURL, '_blank');
 }
 
 /**

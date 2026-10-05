@@ -1,89 +1,92 @@
 # Project Overview
 
-> **Status:** Defined — ready for Architect and UX roles  
-> **Last updated:** 2026-10-02
+> **Status:** Active prototype — iteratively developed with AI assistance  
+> **Last updated:** 2026-10-05
 
 ## Purpose
 
-_What problem does this app solve? Who is it for?_
+Autodesk Tandem allows users to work with individual facilities (buildings, campuses, etc.), but
+provides no built-in "portfolio" view across all facilities in an account. This app fills that gap.
 
-Tandem is a digital twin application that allows users to interact with ONE facility, but there is no app that allows users to have a "porfolio" view of all their facilities.  A common case might be a University campus with many buildings, an Airport, or maybe a reatil chain like WalMart or Starbucks.  A portfolio view will allow them to see what Facilities they have and where they are located, and then will try to do comparisons between them, or identify "hot spots" that should be looked into further by the user.
+A typical use case is a university campus manager, airport operator, or retail chain (think Walmart
+or Starbucks) that manages dozens or hundreds of buildings in Tandem and needs a single dashboard to:
+
+- See all their facilities at once
+- Locate them on a map
+- Compare usage, cost drivers, and data health across facilities
+- Spot outliers and "hot spots" that warrant a closer look
+- Understand who has access to what, and what changed recently
 
 ## Target Audience
 
-Typically these are Facility Managers or Property Managers.  People that handle a company's corporate physical buildings and facilities.
+Facility Managers and Property Managers who handle a company's portfolio of physical buildings.
+Initially an internal Autodesk prototype; quality is held to production standards from the start.
 
-## Core Use Cases
-
-1. See a full list of all Facilities they are managing
-2. Locate them on a map
-3. Compare performance, cost, energy usage, or any other measurement that might be high-value to see across your portfolio of facilties.
-4. Understand who has access to which facilities (Access tab — user-facility bipartite graph).
-5. See recent activity across all facilities — what changed, who changed it, and when (Activity tab — planned).
-
-## Tabs (current + planned)
+## Tabs (implemented)
 
 | Tab | Status | Description |
 |-----|--------|-------------|
-| Portfolio | ✅ Live | Card grid of all facilities; stream + tagged-asset badge counts; "View Details →" drill-down |
-| Map | ✅ Live | Leaflet map showing facility locations |
-| Details | ✅ Live | Per-facility drill-down: streams list and tagged assets breakdown |
-| Access | ✅ Live | D3 force-directed bipartite graph — users/apps ↔ facilities; click nodes to inspect |
-| Compare | 🔲 Stub | Cross-facility property comparison (not yet implemented) |
-| Activity | 🔲 Stub | Cross-facility recent-activity feed (see below) |
+| Portfolio | ✅ Live | Card grid + leaderboard view; streams, tagged assets, template grouping; account metrics banner; "Open in Stats" punch-out |
+| Map | ✅ Live | Leaflet map with facility pins; inline location form; unlocated panel |
+| Access | ✅ Live | D3 force-directed bipartite graph — users/apps ↔ facilities |
+| Compare | ✅ Live | Side-by-side facility comparison table (up to 6); portfolio-wide outlier detection (±1.5σ) |
+| Activity | ✅ Live | Cross-facility recent-activity feed; twin + model history; stream health status |
+| Accounts | ✅ Live | Cross-account leaderboard ranked by 7 metrics; 403-forbidden accounts handled gracefully |
 
-## Activity Tab — Feature Design Notes
+## Key Features
 
-### Goal
-Surface a unified "what happened recently across my portfolio?" view so facility managers can spot unexpected changes, track onboarding progress, or audit who is modifying data.
+### Portfolio tab
+- **Card grid**: facility thumbnail, model count, stream count, tagged asset count
+- **Leaderboard view**: toggle between grid and ranked list; sort by Streams, Tagged Assets, or Template
+- **Template clustering**: template sort groups facilities under section headers with no numeric bars
+- **Account metrics banner**: Facilities · Models · Streams · Assets · Connections · Elements · Storage; "as of [date]" from API
+- **"Open in Stats" punch-out**: opens `tandem-sample-stats` pre-selected to the right account and facility
 
-### Data sources
-Both endpoints are already used in `tandem-sample-stats`:
-- **Twin history** — `POST /twins/{urn}/history` — ACL changes (users added/removed, access-level changes)
-- **Model history** — `POST /modeldata/{modelURN}/history` — property edits, imports, stream config changes
+### Map tab
+- Facilities plotted as colored pins (blue = located, gray = not yet placed)
+- Click a pin → popup with facility summary
+- Click "Set location" on unlocated facility → inline location form appears directly below that row
+- Geocode by address (Nominatim/OpenStreetMap, no API key required) or click map to drop pin
 
-### Proposed UX (two-level)
+### Compare tab
+- Searchable pill selector — add up to 6 facilities
+- Side-by-side table: Models, Streams, Tagged Assets (with loading spinners), Template, Region
+- Outlier cells highlighted: 🔴▲ above average, 🟡▼ below average (±1.5σ threshold)
+- Portfolio outlier panel: scans ALL account facilities and surfaces statistical anomalies as alert cards
 
-**Level 1 — Summary feed (cross-facility)**
-- Load the last N days of twin history for every facility in the account (concurrency-limited like the stats loader)
-- Aggregate into a single timeline sorted by timestamp descending
-- Each row: `[timestamp] [facility name] [change type] [actor]`
-- Filter controls: date range, change type (ACL / model / property), facility
-- Performance note: twin history is lightweight; model history is heavier — load model history lazily (on drill-down only)
+### Activity tab
+- Loads last 30 days of twin history + stream health per facility
+- Filters out system-generated `metrics_update` events
+- Stream health chips use SVG waveform icon (no emoji)
 
-**Level 2 — Drill-down (per-facility)**
-- Click a row (or a facility name) → expand an inline panel or navigate to a facility-scoped view
-- Shows: twin history section + model history section (one accordion per model), matching the layout in `tandem-sample-stats`
-- "Open in Tandem ↗" link at the bottom
+### Accounts tab
+- Fetches `GET /groups/{urn}/metrics` for all accounts in parallel (concurrency-5 pool)
+- 7 sort metrics: Facilities, Models, Streams, Assets, Connections, Elements, Storage
+- Bars scale to account-wide max per metric
+- 403-forbidden accounts shown with "No access" warning, sorted to bottom, dimmed
 
-### Implementation hints
-- Reuse `getTwinHistory(facilityURN, region, options)` and `getHistory(modelURN, region, options)` from `js/api.js`
-- Use the same 5-worker concurrency pool pattern from the stats loader / access view
-- Cache results keyed by `(accountName, facilityURN)` — history changes, but no need to re-fetch on every tab switch
-- The actor field in history entries is a user ID — resolve to display name using the `_userMap` built by the Access view (already has `userId → name` for all facility users)
+## Punch-out to tandem-sample-stats
+
+Portfolio can open the companion `tandem-sample-stats` app pre-selected to the clicked facility.
+
+**Mechanism (two complementary approaches):**
+1. **Hash params** (cross-origin safe): `https://…/tandem-sample-stats/#account=NAME&facility=URN`
+   — Stats saves these to `sessionStorage` before OAuth redirect so they survive the auth round-trip
+2. **Cookies** (localhost bonus): one-shot cookies share the session token so no re-authentication
+   is required when both apps run on `localhost`
+
+On GitHub Pages, only the hash approach is used (cookies can't cross origins). The user sees a
+brief OAuth redirect on first open, then lands directly on the selected facility.
 
 ## Out of Scope
 
-This app will not be used to replace the features in Tandem.  When it comes time to "drill-down" into the details of a particular facility, it can simply "punch out" to Tandem itself using a URL to that Facility (and it can come up in another browser tab or completely new browser session)
+This app supplements Tandem — it does not replace it. When users need deep facility detail, they
+punch out to Tandem (or to `tandem-sample-stats`) rather than duplicating that functionality here.
 
-## Open Questions
+## Reference Codebases
 
-- What is the primary audience: internal Autodesk users, external customers, developers?
-    Answer: this is initially a prototype for internal Autodesk users to help them brainstorm about what a final app would look like, but, it should be high quality from the beginning.
-- Is this a demo/sample or a production app?
-    Answer: It will start out as a prototype for what a production app COULD eventually look like.
-- Are there branding or visual design requirements?
-    Answer: for now, it should follow the same visual cues as the project 'tandem-sample-stats' and 'tandem-sample-emb-viewer'.  You may also want to look at the source for Tandem client app itself (in project 'dt-client'), but do not let any proprietary code leak out directly from that code base.
-- What Tandem data is central to this experience (streams, assets, rooms, models, all of the above)?
-    Answer: probably everything in at least summary form.  We want to be able to compare across facilties for trends, exceptions, "hot spots", etc.
-
-## Reference code bases
-1. 'dt-server' - implementation of Tandem's backend server and REST API (propietary, do not leak details). Code is either in the IDE or availabe here: https://git.autodesk.com/tandem/dt-server
-
-2. 'viewer' - implementation of the Javascript SDK that the Tandem client app uses.  Includes the LMV viewer component. Proprietary, do not leak details.  Code is either in the IDE or available here: https://git.autodesk.com/tandem/viewer
-
-3. 'dt-client' - implementation of the Tandem client application (end user tool that customers use). Proprietary, do not leak details. Code is either in the IDE or available here: https://git.autodesk.com/tandem/dt-client
-
-4. 'tandem-sample-stats' - developer sample (code available publically).  Demonstrates how to call all the REST APIs from 'dt-server'. Code is either in the IDE or available here: https://github.com/autodesk-tandem/tandem-sample-stats
-
-5. 'tandem-sample-emb-viewer' - demonstrates use of the Javascript SDK (from 'viewer' component) and shows how to embed a 3D viewer (if we decide we need one). Code is either in the IDE or available here: https://github.com/autodesk-tandem/tandem-sample-emb-viewer
+1. [`tandem-sample-stats`](https://github.com/autodesk-tandem/tandem-sample-stats) — companion app; demonstrates REST API patterns
+2. [`tandem-sample-emb-viewer`](https://github.com/autodesk-tandem/tandem-sample-emb-viewer) — JavaScript SDK + embedded viewer
+3. `dt-server` — Tandem backend (proprietary; do not leak implementation details)
+4. `dt-client` — Tandem web client (proprietary; do not leak implementation details)
+5. `viewer` — Tandem JavaScript SDK (proprietary; do not leak implementation details)

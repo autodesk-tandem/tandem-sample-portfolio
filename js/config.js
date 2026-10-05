@@ -8,7 +8,8 @@ const prodEnvironment = {
   loginRedirect: "http://localhost:8001",
   tandemDbBaseURL: "https://developer.api.autodesk.com/tandem/v1",
   tandemAppBaseURL: "https://tandem.autodesk.com/app",
-  // URL of the tandem-sample-stats companion app (used for "Open in Stats" punch-out)
+  // URL of the tandem-sample-stats companion app (used for "Open in Stats" punch-out).
+  // Overridden dynamically in getEnv() based on where this app is running.
   statsAppURL: "http://localhost:8000",
 };
 
@@ -41,10 +42,17 @@ export function getEnv() {
     loginRedirect = window.location.origin;
   }
   
+  // When running on GitHub Pages, punch-out goes to the deployed Stats app.
+  // When running on localhost, it goes to localhost:8000 (set in prodEnvironment).
+  const statsAppURL = isGitHubPages
+    ? 'https://autodesk-tandem.github.io/tandem-sample-stats/'
+    : prodEnvironment.statsAppURL;
+
   // Return production environment with dynamic redirect
   return {
     ...prodEnvironment,
-    loginRedirect: loginRedirect
+    loginRedirect,
+    statsAppURL,
   };
   
   // Uncomment to use staging

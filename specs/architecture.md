@@ -1,173 +1,181 @@
 # Architecture Spec
 
-> **Status:** Proposed — awaiting review  
-> **Last updated:** 2026-10-02  
+> **Status:** Implemented — reflects built state as of 2026-10-05  
+> **Last updated:** 2026-10-05  
 > **Role:** Architect
 
 ---
 
 ## Tech Stack
 
-Matches the pattern established in `tandem-sample-stats` and `tandem-sample-emb-viewer`.
-
 | Concern | Choice | Rationale |
 |---------|--------|-----------|
-| Runtime | Browser, vanilla JS, ES modules | Consistent with sample apps; no build step needed |
-| Styling | Tailwind CSS via CDN | Already used in both reference apps; same dark theme |
+| Runtime | Browser, vanilla JS, ES modules | No build step; consistent with reference sample apps |
+| Styling | Tailwind CSS via CDN | Same dark theme as reference apps |
 | Auth | OAuth 3-legged PKCE via `js/auth.js` | Inherited; proven |
 | API | Tandem REST API via `js/api.js` | Inherited; proven |
-| Map | **Leaflet.js** via CDN | Open source, no API key, widely used, good enough for prototype |
-| Charts | **Chart.js** via CDN | Lightweight, CDN-available, sufficient for bar/line/radar comparisons |
-| 3D Viewer | **None** | Portfolio view is data-centric; punch-out to Tandem for 3D detail |
-| Bundler | None | CDN imports only; consistent with reference apps |
+| Map | Leaflet.js via CDN | Open source, no API key, well-suited for prototype |
+| Charts | None (Chart.js CDN available if needed) | Compare tab uses CSS bars instead of canvas charts |
+| 3D Viewer | None | Portfolio is data-centric; punch-out to Tandem for 3D |
+| Bundler | None | CDN imports only |
 
-### Colors (from reference apps)
+### Color Tokens
 ```
-tandem-blue:   #0696D7
-tandem-dark:   #0D2C54
-dark-bg:       #1a1a1a
-dark-card:     #2a2a2a
-dark-border:   #404040
-dark-text:     #e0e0e0
-dark-text-secondary: #a0a0a0
+tandem-blue:          #0696D7
+dark-bg:              #1a1a1a
+dark-card:            #2a2a2a
+dark-border:          #404040
+dark-text:            #e0e0e0
+dark-text-secondary:  #a0a0a0
+```
+
+---
+
+## File Structure (actual)
+
+```
+tandem-sample-portfolio/
+├── index.html
+├── js/
+│   ├── app.js              # Bootstrap, auth, account/facility loading, tab switching
+│   ├── config.js           # APS client ID, environment URLs, statsAppURL
+│   ├── auth.js             # OAuth PKCE (inherited + hash deeplink support)
+│   ├── api.js              # Tandem REST wrappers
+│   ├── state/
+│   │   ├── facilityCache.js   # In-memory facility summary cache (session-scoped)
+│   │   └── locationStore.js   # Facility lat/lng — persisted in localStorage
+│   └── views/
+│       ├── portfolioView.js   # Card grid + leaderboard; account metrics banner
+│       ├── mapView.js         # Leaflet map; inline location form
+│       ├── accessView.js      # D3 force-directed bipartite graph
+│       ├── compareView.js     # Side-by-side table + outlier detection
+│       ├── activityView.js    # Cross-facility activity feed + stream health
+│       └── accountsView.js    # Cross-account leaderboard
+├── tandem/
+│   ├── constants.js        # Column families, names, element flags, QC (inherited)
+│   └── keys.js             # Key/xref conversion utilities (inherited)
+└── specs/                  # Living specification documents
 ```
 
 ---
 
 ## Auth & Account/Facility Loading
 
-**Do not redesign this — reuse the proven pattern from `tandem-sample-stats`.**
-
 ### Login
-`js/auth.js` handles the full OAuth 3-legged PKCE flow. Call `checkLogin()` on page load; call `login()` to initiate. No changes needed.
+`js/auth.js` handles full OAuth 3-legged PKCE. `checkLogin()` on page load; `login()` to initiate.
 
-### Loading all facilities (the efficient way)
-Use `getUserResources('@me')` from `js/api.js`. This makes **one API call** that returns all facilities and groups across all regions. Cache the result for the session in a `userResourcesCache` variable.
+Hash-based deeplink params (`#account=...&facility=...`) are saved to `sessionStorage` at the
+top of `checkLogin()` — before any OAuth redirect fires — so they survive the auth round-trip.
+
+### Loading all facilities (efficient pattern)
+One `getUserResources('@me')` call returns all facilities and groups across all regions.
 
 ```javascript
-// One call — returns { twins: [...], groups: [...] } across all regions
 userResourcesCache = await getUserResources('@me');
-
-// Build a facilityURN → region map for instant lookups (no per-region round-trips)
-userResourcesCache.twins.forEach(twin => {
-  facilityRegionMap.set(twin.id, twin.region);
-});
+userResourcesCache.twins.forEach(twin => facilityRegionMap.set(twin.id, twin.region));
 ```
 
-**Why this matters:** For large accounts (e.g. 1000 facilities), the old approach of 3 calls per account × N accounts is prohibitively slow. The single `@me/resources` call is the correct approach.
+This scales to large portfolios (1000+ facilities) without per-region round-trips.
 
-### Account & facility dropdowns
-Follow `populateAccountsDropdown()` and `populateFacilitiesDropdown()` from `tandem-sample-stats/js/app.js` exactly, including:
-- Alphabetical sort with "SHARED DIRECTLY" always at bottom
-- `localStorage` for last-selected account and facility
-- Schema version check before loading facility data
-
----
-
-## Application Structure
-
-Single-page app with three primary views accessible via a top navigation tab bar:
-
-```
-index.html
-js/
-  app.js            # Bootstrap, auth, account/facility loading
-  config.js         # APS client ID, environment URLs
-  auth.js           # OAuth PKCE (inherited)
-  api.js            # Tandem REST wrappers (inherited)
-  state/
-    facilityCache.js   # In-memory cache of facility summaries per session
-    locationStore.js   # Facility lat/lng — persisted in localStorage
-  views/
-    portfolioView.js   # View 1: Facility list/cards
-    mapView.js         # View 2: Interactive map
-    comparisonView.js  # View 3: Cross-facility metric comparison
-  utils/
-    hotspot.js         # Threshold logic: green / yellow / red classification
-tandem/
-  constants.js      # (inherited)
-  keys.js           # (inherited)
-```
-
----
-
-## Key Architectural Decision: Facility Location Data
-
-**Problem:** Tandem does not natively store lat/lng coordinates for facilities.
-
-**Decision:** Use a two-tier approach:
-1. **Check facility settings** — if a facility has a `location` property in its settings object (some facilities may have this set in the Tandem UI), use it
-2. **Fall back to localStorage** — allow users to pin a location per facility directly in the app. Stored as `portfolio:location:{facilityURN}` in localStorage
-
-This means the app works immediately (just without map pins for unlocated facilities) and improves as users add locations.
-
-**Future:** If Tandem adds a native location field, the `locationStore.js` abstraction makes it easy to switch.
+### Account + facility dropdowns
+- Alphabetical sort; "SHARED DIRECTLY" always last
+- `localStorage` persists last-selected account and facility across sessions
+- Schema version check (`SchemaVersion` constant) before loading facility data
 
 ---
 
 ## Data Loading Strategy
 
-Accounts range from a handful of facilities to ~1000 (e.g. a retail chain). Loading must scale.
+### Parallel pipelines per facility
+Each facility triggers two concurrent fetch pipelines in `loadAllFacilityStats()`:
 
-1. **Paginate the facility list** — load 50 at a time; show a "Load more" button or trigger on scroll
-2. **Lazy load per card** — after the facility list arrives, each card fetches its own summary independently
-3. **In-memory cache** — `facilityCache.js` holds loaded summaries for the session; scrolling back doesn't re-fetch
-4. **Priority loading** — cards visible in the viewport load first
-5. **No pre-fetching streams** — stream data is expensive; only load when a facility is selected for comparison
-6. **Thumbnail lazy load** — fetch thumbnails only for cards in or near the viewport; use `getFacilityThumbnail(urn, region)` from `api.js`; call `cleanupThumbnailURLs()` on account switch
+```
+getFacilityStats(urn)      → { streamCount, taggedAssetCount }
+getInlineTemplate(urn)     → { name }   (GET /twins/{urn}/template)
+```
 
-### What counts as a "facility summary"
-- Facility name, URN, model count
-- Thumbnail (via `GET /twins/{urn}/thumbnail` → blob URL)
-- Stream count
-- Asset count
-- Hot spot badge data (reserved slot — thresholds TBD)
+Both are fetched together and written to `facilityCache` **before** `updateCardStats()` is called,
+so the leaderboard always has template names regardless of view mode (grid vs leaderboard).
 
-### Stream matching for comparison (cross-facility)
+`loadFacilityData()` (card rendering) also writes to the cache. A cache-skip guard prevents
+duplicate network calls when one pipeline finishes before the other.
 
-Facilities may have streams with similar but not identical names (e.g. "Temperature", "Temp (°F)", "Air Temp").
+### Concurrency
+All background loading uses a 5-worker concurrency pool pattern:
+```javascript
+async function worker() {
+    while (cursor < facilities.length) {
+        await doWork(facilities[cursor++]);
+    }
+}
+await Promise.all(Array.from({ length: 5 }, () => worker()));
+```
+Used in: `loadAllFacilityStats`, `accessView`, `activityView`, `accountsView`.
 
-**Strategy — two-phase matching:**
-1. **Semantic grouping**: Normalize stream names (lowercase, strip units, common aliases) and group streams across facilities that likely measure the same thing. Confidence score determines auto-match vs. prompt-for-disambiguation.
-2. **User disambiguation**: When confidence is below threshold, show a grouping UI: "We think these measure the same thing — confirm or reassign." User choices are saved to localStorage per facility pair.
+### Pagination
+50 cards rendered initially; "Load more" button appends the next 50. Leaderboard renders all
+filtered facilities (no pagination — rows are lighter than cards).
 
-**Normalization rules (initial set — expand as needed):**
-- Strip units in parentheses: `"Temp (°F)"` → `"temp"`
-- Common aliases: temperature/temp, humidity/rh/relative humidity, co2/carbon dioxide, energy/kwh/power
-- Case-insensitive, punctuation-stripped comparison
-
-Implementation lives in `utils/streamMatcher.js`.
+### Caching
+- `facilityCache.js` — in-memory; cleared on account switch
+- `locationStore.js` — `localStorage`; persists across sessions
+- Template names, stats, and thumbnails are all cached in `facilityCache`
 
 ---
 
-## Tandem API Usage Patterns
+## Key API Endpoints
 
-- Always use constants from `tandem/constants.js` — no hardcoded column names
-- Always check override columns first: `QC.OName` before `QC.Name`, etc.
-- Convert long keys → short keys before querying elements (`toShortKey()`)
-- Filter `/scan` responses for the version string: first element is `'v1'`
+| Endpoint | Used for |
+|----------|----------|
+| `GET /users/@me/resources` | All facilities + groups in one call |
+| `GET /twins/{urn}/thumbnail` | Facility card thumbnails |
+| `GET /twins/{urn}` | Facility info (name, models, settings) |
+| `GET /twins/{urn}/template` | Template name (lightweight) |
+| `POST /modeldata/{urn}/scan` | Elements for stream/asset counts |
+| `POST /twins/{urn}/history` | Recent activity (twin history) |
+| `POST /modeldata/{urn}/history` | Model change history |
+| `GET /groups/{urn}/metrics` | Account-level usage totals |
+| `GET /timeseries/models/{urn}/streams:batch-lastseen` | Stream last-seen values |
 
-### Punch-out to Tandem
-When a user clicks "Open in Tandem" for a facility:
-```javascript
-const tandemURL = `https://tandem.autodesk.com/pages/facilities/${encodeURIComponent(facilityURN)}`;
-window.open(tandemURL, '_blank');
+---
+
+## Punch-out to tandem-sample-stats
+
 ```
+Portfolio (localhost:8001 or github.io)
+  → openDetails(urn)
+  → builds URL: statsBase + #account=NAME&facility=URN
+  → window.open(statsURL, '_blank')
+
+Stats app (localhost:8000 or github.io/tandem-sample-stats)
+  → checkLogin() reads hash → saves to sessionStorage → strips hash
+  → OAuth redirect (if needed)
+  → app.js reads sessionStorage → selects account + facility → loadFacility()
+```
+
+Cookie-based token sharing (localhost only) is layered on top:
+- Portfolio writes `tandem_shared_token` cookie (max-age=60s)
+- Stats reads it in `checkLogin()` before any OAuth redirect
+- No effect on cross-origin deployments
 
 ---
 
 ## Constraints (Non-negotiable)
 
 - No hardcoded column names or magic numbers — always use `tandem/constants.js`
-- No credentials or tokens in localStorage beyond what `auth.js` already manages
-- No direct imports from `dt-client`, `viewer`, or `dt-server` — these are proprietary
+- No credentials or tokens in `localStorage` beyond what `auth.js` manages
+- No direct imports from `dt-client`, `viewer`, or `dt-server` — proprietary
 - All external API calls use HTTPS only
-- Do not load more Tandem data than necessary — this app serves potentially large portfolios
+- Never commit or log access tokens
 
 ---
 
-## Open Questions
+## Resolved Design Decisions
 
-- [ ] **Stream aggregation** — for the portfolio summary card, do we show stream count only, or also an aggregate value (e.g. average temp across all temp streams in that facility)?
-- [ ] **Hot spot thresholds** — badge is reserved (see UX spec); exact threshold logic TBD once we see real data
-- [ ] **Comparison metrics** — user-selectable from available stream types; auto-matched via `streamMatcher.js` with user disambiguation available
+| Question | Decision |
+|----------|----------|
+| Stream matching for Compare | Replaced with statistical outlier detection (±1.5σ); no per-stream comparison needed for MVP |
+| Hot spot badges | Implemented as outlier detection in Compare tab; card badges remain reserved |
+| Template source | `GET /twins/{urn}/template` (lightweight endpoint, not the heavy `/inlinetemplate?flatten`) |
+| Location storage | `localStorage` keyed by `portfolio:location:{facilityURN}` |
+| Cross-origin punch-out | URL hash params + sessionStorage; cookies as localhost bonus |
