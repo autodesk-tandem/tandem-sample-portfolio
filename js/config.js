@@ -8,6 +8,8 @@ const prodEnvironment = {
   loginRedirect: "http://localhost:8001",
   tandemDbBaseURL: "https://developer.api.autodesk.com/tandem/v1",
   tandemAppBaseURL: "https://tandem.autodesk.com/app",
+  // URL of the tandem-sample-stats companion app (used for "Open in Stats" punch-out)
+  statsAppURL: "http://localhost:8000",
 };
 
 const stgEnvironment = {

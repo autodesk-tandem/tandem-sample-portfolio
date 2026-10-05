@@ -211,34 +211,46 @@ function renderUnlocatedPanel() {
 
     if (!unlocated.length && !placingFor) { panel.innerHTML = ''; return; }
 
-    const unlocatedSection = unlocated.length ? `
+    // Build the row list.  For the active facility the form is inserted INLINE
+    // right below its row — so it's always visible regardless of list length.
+    // If "Change location" is active for an already-pinned facility, show it
+    // at the top of the list so it has a row to anchor the inline form to.
+    const listFacilities = [...unlocated];
+    if (isChanging && !listFacilities.find(f => f.urn === placingFor)) {
+        listFacilities.unshift(placingFacility);
+    }
+
+    const rowsHtml = listFacilities.map(f => {
+        const row = renderUnlocatedRow(f);
+        if (placingFor === f.urn) {
+            return row + renderLocationForm();   // form lives inside the list, after its row
+        }
+        return row;
+    }).join('');
+
+    const unlocatedSection = listFacilities.length ? `
         <details class="border border-dark-border rounded-lg overflow-hidden mt-4" open>
             <summary class="flex items-center justify-between px-4 py-2.5 bg-dark-card
                             cursor-pointer select-none text-sm font-medium text-dark-text-secondary hover:text-dark-text">
-                <span>Unlocated facilities (${unlocated.length})</span>
+                <span>${isChanging ? `Changing location` : `Unlocated facilities (${unlocated.length})`}</span>
                 <span class="text-xs">▼</span>
             </summary>
             <div class="divide-y divide-dark-border bg-dark-bg">
-                ${unlocated.map(renderUnlocatedRow).join('')}
+                ${rowsHtml}
             </div>
         </details>` : '';
 
-    const changingBanner = isChanging ? `
-        <div class="mt-4 px-4 py-2.5 bg-tandem-blue bg-opacity-10 border border-tandem-blue border-opacity-30 rounded-lg text-xs text-tandem-blue">
-            Changing location for <span class="font-semibold">${escapeHtml(placingFacility.name)}</span> —
-            existing pin stays until you confirm a new one.
-        </div>` : '';
-
-    panel.innerHTML = `
-        ${unlocatedSection}
-        ${changingBanner}
-        ${placingFor ? renderLocationForm() : ''}`;
+    panel.innerHTML = unlocatedSection;
 
     panel.querySelectorAll('[data-set-location]').forEach(btn =>
         btn.addEventListener('click', () => enterPlacingMode(btn.dataset.setLocation))
     );
 
-    if (placingFor) wireLocationForm();
+    if (placingFor) {
+        wireLocationForm();
+        // Scroll the inline form into view so it's always visible
+        document.getElementById('locationForm')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
 }
 
 function renderUnlocatedRow(facility) {
@@ -263,7 +275,7 @@ function renderLocationForm() {
     const address  = summary?.address ?? '';
 
     return `
-        <div id="locationForm" class="mt-3 bg-dark-card border border-dark-border rounded-lg p-4 space-y-4">
+        <div id="locationForm" class="bg-dark-bg border-t border-dark-border p-4 space-y-4">
             <p class="text-xs font-medium text-dark-text-secondary">
                 Set location for <span class="text-dark-text font-semibold">${escapeHtml(facility.name)}</span>
             </p>
@@ -475,6 +487,7 @@ function confirmLocation(urn, lat, lng) {
 function cancelPlacing() {
     clearPreview();
     placingFor = null;
+    renderUnlocatedPanel();
 }
 
 function clearPreview() {

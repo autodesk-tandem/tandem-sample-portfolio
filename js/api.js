@@ -185,14 +185,39 @@ export async function getFacilityInfo(facilityURN, region) {
   try {
     const requestPath = `${tandemBaseURL}/twins/${facilityURN}`;
     const response = await fetch(requestPath, makeRequestOptionsGET(region));
-    
+
     if (!response.ok) {
       throw new Error(`Failed to fetch facility info: ${response.statusText}`);
     }
-    
+
     return await response.json();
   } catch (error) {
     console.error('Error fetching facility info:', error);
+    return null;
+  }
+}
+
+/**
+ * Get the applied (inline) facility template, which contains the human-readable name.
+ * The /twins/{urn} skeleton only contains the classification UUID — the name requires
+ * a separate call to /twins/{urn}/inlinetemplate?flatten.
+ * Returns null if no template is applied (404) or on error.
+ *
+ * @param {string} facilityURN
+ * @param {string} region
+ * @returns {Promise<{name: string}|null>}
+ */
+export async function getInlineTemplate(facilityURN, region) {
+  try {
+    const requestPath = `${tandemBaseURL}/twins/${facilityURN}/inlinetemplate?flatten`;
+    const response = await fetch(requestPath, makeRequestOptionsGET(region));
+
+    if (response.status === 404) return null; // no template applied
+    if (!response.ok) throw new Error(`Failed to fetch inline template: ${response.statusText}`);
+
+    return await response.json();
+  } catch (error) {
+    console.error('Error fetching inline template:', error);
     return null;
   }
 }

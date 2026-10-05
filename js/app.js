@@ -11,6 +11,7 @@
  */
 
 import { login, logout, checkLogin } from './auth.js';
+import { getEnv } from './config.js';
 import {
     getUserResources,
     getFacilitiesForGroup,
@@ -27,8 +28,8 @@ import {
 } from './views/portfolioView.js';
 import { render as renderMap, invalidateMapSize } from './views/mapView.js';
 import { render as renderComparison } from './views/comparisonView.js';
-import * as detailsView from './views/detailsView.js';
-import * as accessView  from './views/accessView.js';
+import * as accessView    from './views/accessView.js';
+import * as activityView  from './views/activityView.js';
 
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 const loginBtn        = document.getElementById('loginBtn');
@@ -226,10 +227,8 @@ async function switchAccount(accountName) {
     renderPortfolio(facilities, facilityRegionMap);
     renderMap(facilities, facilityRegionMap);
     renderComparison(facilities, facilityRegionMap);
-    detailsView.renderEmpty();
     accessView.render(facilities, facilityRegionMap);
-    _activityPlaceholderShown = false; // reset so placeholder re-renders on next visit
-    document.getElementById('activityContent').innerHTML = '';
+    activityView.render(facilities, facilityRegionMap);
 
     // If the user is already on the Access tab, start loading immediately
     if (currentTab === 'access') accessView.activate();
@@ -242,53 +241,27 @@ async function switchAccount(accountName) {
 }
 
 /**
- * Open the Details tab for a specific facility URN.
+ * Open the tandem-sample-stats companion app in a new tab, pre-selecting
+ * the current account and the clicked facility.
+ *
+ * Cookies on localhost are shared across ports (port is not part of the cookie
+ * domain), so we write three one-shot cookies that stats reads on startup:
+ *   tandem_shared_token    — reuses the current session, no re-login required
+ *   tandem_deeplink_account / tandem_deeplink_facility — pre-select dropdowns
+ *
  * Wired to the "View Details →" button on portfolio cards.
  */
 function openDetails(urn) {
-    const account  = accounts.find(a => a.name === currentAccountName);
-    const facility = account?.facilities?.find(f => f.urn === urn);
-    if (!facility) return;
-    const region = facilityRegionMap.get(urn) ?? facility.region ?? 'us';
-    detailsView.render(facility, region);
-    switchTab('details');
-}
+    const statsBase = getEnv().statsAppURL ?? 'http://localhost:8000';
 
-/**
- * Activity tab — placeholder until the feature is implemented.
- * Only renders once per tab visit (idempotent after first paint).
- */
-let _activityPlaceholderShown = false;
-function showActivityPlaceholder() {
-    const el = document.getElementById('activityContent');
-    if (!el || _activityPlaceholderShown) return;
-    _activityPlaceholderShown = true;
+    // One-shot cookies (max-age=60s — enough to survive the new tab opening;
+    // stats clears them immediately after reading).
+    const cookieOpts = 'path=/; max-age=60; SameSite=Lax';
+    document.cookie = `tandem_shared_token=${encodeURIComponent(window.sessionStorage.token ?? '')};${cookieOpts}`;
+    document.cookie = `tandem_deeplink_account=${encodeURIComponent(currentAccountName)};${cookieOpts}`;
+    document.cookie = `tandem_deeplink_facility=${encodeURIComponent(urn)};${cookieOpts}`;
 
-    el.innerHTML = `
-        <div class="flex flex-col items-center justify-center py-24 text-dark-text-secondary gap-4 max-w-lg mx-auto text-center">
-            <svg class="w-12 h-12 text-dark-border" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-                      d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
-            </svg>
-            <div>
-                <p class="text-sm font-semibold text-dark-text mb-1">Recent Activity — Coming Soon</p>
-                <p class="text-xs leading-relaxed">
-                    This tab will surface a cross-facility activity feed: who changed what,
-                    when, and in which facility — with a summary roll-up and a drill-down
-                    into facility-level and model-level history.
-                </p>
-            </div>
-            <div class="mt-2 grid grid-cols-2 gap-3 w-full text-left text-xs">
-                <div class="bg-dark-card border border-dark-border rounded p-3">
-                    <p class="font-semibold text-dark-text mb-1">📋 Planned: Summary feed</p>
-                    <p class="text-dark-text-secondary">Recent ACL changes, model imports, and property edits rolled up across all facilities.</p>
-                </div>
-                <div class="bg-dark-card border border-dark-border rounded p-3">
-                    <p class="font-semibold text-dark-text mb-1">🔍 Planned: Drill-down</p>
-                    <p class="text-dark-text-secondary">Click any facility to see its twin history + per-model history, similar to the tandem-sample-stats view.</p>
-                </div>
-            </div>
-        </div>`;
+    window.open(statsBase, '_blank');
 }
 
 /**
@@ -328,7 +301,7 @@ async function loadAllFacilityStats(facilities, accountAtStart) {
 
 // ── Tab switching ─────────────────────────────────────────────────────────────
 
-const TABS = ['portfolio', 'map', 'details', 'access', 'compare', 'activity'];
+const TABS = ['portfolio', 'map', 'access', 'compare', 'activity'];
 
 function switchTab(tabId) {
     currentTab = tabId;
@@ -347,8 +320,7 @@ function switchTab(tabId) {
     if (tabId === 'map')      invalidateMapSize();
     // Access graph loads lazily on first visit
     if (tabId === 'access')   accessView.activate();
-    // Activity view: show placeholder until implemented
-    if (tabId === 'activity') showActivityPlaceholder();
+    if (tabId === 'activity') activityView.activate();
 }
 
 // ── Application init ──────────────────────────────────────────────────────────
@@ -385,7 +357,9 @@ async function initialize() {
 
     // Check auth
     toggleLoading(true);
-    const { loggedIn, profileImg } = await checkLogin();
+    const { loggedIn, profileImg, currentUserId } = await checkLogin();
+    // Share the logged-in user's identity with the access view so their photo renders on their node
+    if (currentUserId && profileImg) accessView.setCurrentUser(currentUserId, profileImg);
 
     if (loggedIn) {
         setLoginState(true, profileImg);

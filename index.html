@@ -137,10 +137,6 @@
                         class="tab-btn px-4 py-2.5 text-sm font-medium text-dark-text-secondary hover:text-dark-text transition border-b-2 border-transparent">
                     Map
                 </button>
-                <button data-tab="details"
-                        class="tab-btn px-4 py-2.5 text-sm font-medium text-dark-text-secondary hover:text-dark-text transition border-b-2 border-transparent">
-                    Details
-                </button>
                 <button data-tab="access"
                         class="tab-btn px-4 py-2.5 text-sm font-medium text-dark-text-secondary hover:text-dark-text transition border-b-2 border-transparent">
                     Access
@@ -191,18 +187,23 @@
                 <p id="portfolioCount" class="text-xs text-dark-text-secondary"></p>
             </div>
 
-            <!-- Card grid -->
+            <!-- Card grid (grid mode) -->
             <div id="facilityGrid"
                  class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                 <!-- Facility cards rendered by portfolioView.js -->
             </div>
 
-            <!-- Load more -->
+            <!-- Load more (grid mode only) -->
             <div id="loadMoreContainer" class="hidden text-center mt-8">
                 <button id="loadMoreBtn"
                         class="px-5 py-2 text-sm font-medium rounded border border-dark-border text-dark-text-secondary hover:bg-dark-card transition">
                     Load more facilities
                 </button>
+            </div>
+
+            <!-- Leaderboard (leaderboard mode) -->
+            <div id="leaderboardContainer" class="hidden">
+                <!-- metric picker + rows rendered by portfolioView.js -->
             </div>
         </div>
 
@@ -211,12 +212,6 @@
             <div id="map-container" class="rounded border border-dark-border overflow-hidden"></div>
             <!-- Unlocated facilities panel rendered by mapView.js -->
             <div id="unlocatedPanel" class="mt-4"></div>
-        </div>
-
-        <!-- Details View -->
-        <div id="view-details" class="hidden">
-            <!-- Rendered by detailsView.js -->
-            <div id="detailsContent"></div>
         </div>
 
         <!-- Access Graph View -->

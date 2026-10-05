@@ -103,7 +103,8 @@ async function loadUserProfile() {
     headers: { "Authorization": `Bearer ${window.sessionStorage.token}` }
   });
   const user = await res.json();
-  return user.picture;
+  // Return the full profile so callers can match on userId (user.sub)
+  return { picture: user.picture, userId: user.sub || user.userId || null };
 }
 
 /**
@@ -220,8 +221,10 @@ export async function checkLogin() {
   // Check if user is logged in
   if (window.sessionStorage.token) {
     try {
-      const profileImg = await loadUserProfile();
-      
+      const profile = await loadUserProfile();
+      const profileImg    = profile?.picture ?? null;
+      const currentUserId = profile?.userId  ?? null;
+
       // Schedule token refresh if not already scheduled
       // This handles cases where the page was refreshed or reopened
       if (!refreshHandle && window.sessionStorage.refreshToken) {
@@ -237,7 +240,7 @@ export async function checkLogin() {
         refreshHandle = setTimeout(() => refreshToken(), refreshDelay);
       }
       
-      return { loggedIn: true, profileImg };
+      return { loggedIn: true, profileImg, currentUserId };
     } catch (err) {
       console.error('Error loading user profile:', err);
       return { loggedIn: false, profileImg: null };

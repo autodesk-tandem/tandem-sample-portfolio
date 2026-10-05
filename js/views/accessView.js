@@ -30,23 +30,36 @@ const FACILITY_STROKE = '#0696D7';
 
 const FR = 22;   // facility rect half-width
 const UR = 18;   // user/app circle radius
+
+// Profile photo URL — same CDN used by the Tandem client (dt-client/src/environment.js).
+// Works for any Autodesk user ID, no auth header required.
+const profileImageURL = id =>
+    `https://images.profile.autodesk.com/${id}/profilepictures/x176.jpg`;
+
+// Service-account icon SVG path — copied from dt-client/res/icons/ApiKeyIcon.svg.
+// ViewBox 0 0 64 64; we scale it to fill the node.
+const API_KEY_PATH = 'm56.08 32c0 13.299-10.781 24.08-24.08 24.08s-24.08-10.781-24.08-24.08 10.781-24.08 24.08-24.08 24.08 10.781 24.08 24.08zm3.44 0c0 15.199-12.321 27.52-27.52 27.52s-27.52-12.321-27.52-27.52 12.321-27.52 27.52-27.52 27.52 12.321 27.52 27.52zm-30.09 14.601h-1.6244c-0.72309 0-1.2645-0.54524-1.2645-1.2721 0 0-0.18163-1.9989-2.3475-3.2709-2.1675-1.4538-4.5168-0.18172-4.5168-0.18172-0.72128 0.36344-1.4426 0.18172-1.806-0.54515l-2.8888-4.7248c-0.18172-0.36344-0.18172-0.72687-0.18172-1.0903s0.36154-0.72696 0.72309-0.90868c0 0 2.1658-1.272 2.3475-3.9978 0.18172-2.3624-2.3475-3.9979-2.3475-3.9979-0.35974-0.18172-0.54137-0.54515-0.54137-0.90859s0-0.72687 0.18163-1.0903l2.7072-4.3613c0.36154-0.54515 1.0847-0.72687 1.6262-0.36344 0 0 2.5291 1.0903 4.6966-0.36344 2.1658-1.4537 2.3475-3.4527 2.3475-3.4527 0-0.72687 0.54146-1.272 1.4445-1.272h5.5997c0.72128 0 1.4445 0.54515 1.4445 1.4537 0 0 0 1.999 2.1675 3.4527 1.8581 1.2474 3.8519 0.62066 4.4926 0.41934l0.0043-0.0014c0.06484-0.02408 0.13175-0.04231 0.19986-0.05452 0.54137-0.18172 1.2627 0 1.6261 0.54515l2.8889 4.543c0.36154 0.54515 0.17983 1.4537-0.36163 1.8172-0.54137 0.36344-1.806 1.4537-2.1675 2.9076-0.17983 0.72687-0.903 1.272-1.6243 1.0903-0.72317-0.18172-1.2664-0.90859-1.0847-1.6355 0.36154-1.6355 1.4445-2.9076 2.3475-3.6344l-1.6243-2.5441c-1.4463 0.36352-3.7937 0.54524-6.1412-0.90859-2.1675-1.272-2.8889-3.0892-3.2523-4.3612h-3.4303l-0.0058 0.01152c-0.36713 0.73444-1.2692 2.5392-3.2464 3.8046-2.3475 1.4537-4.8765 1.272-6.1412 0.90859l-1.6243 2.5441c1.0828 1.0903 2.7072 2.9075 2.7072 5.4516-0.17991 2.7258-1.6244 4.543-2.7072 5.4516l1.6243 2.5441c1.4463-0.36344 3.7937-0.72687 5.9595 0.72687 2.1694 1.272 2.8907 3.0893 3.2523 4.1796h0.36154c0.903 0.18172 1.4445 0.90859 1.4445 1.6355s-0.54146 1.4538-1.2645 1.4538zm-1.4517-15.912c0-1.4992 1.2154-2.7148 2.7144-2.7148 1.5026 0 2.4329 1.0103 2.6745 2.1788 0.08411 0.34245 0.29773 0.63889 0.59581 0.82715 0.29816 0.18817 0.65764 0.25353 1.0028 0.18223 0.34529-0.07129 0.64956-0.27365 0.84873-0.5645 0.19926-0.29094 0.27804-0.64775 0.21982-0.99545-0.45786-2.2189-2.3383-4.3541-5.3417-4.3541-1.4427 0-2.8264 0.57328-3.8465 1.5936s-1.5933 2.4042-1.5933 3.8471c0 3.0238 2.382 4.9755 4.3606 5.3408 0.17862 0.03973 0.36344 0.04291 0.54335 0.0096 0.17991-0.03337 0.35131-0.1026 0.50387-0.20356 0.15265-0.10105 0.28337-0.23177 0.38433-0.38433 0.10096-0.15265 0.17019-0.32405 0.20356-0.50405 0.03328-0.17991 0.03001-0.36481-0.0096-0.54343-0.03965-0.17871-0.11481-0.34753-0.22111-0.49648-0.10638-0.14904-0.24157-0.27503-0.39766-0.37057-0.156-0.09563-0.32972-0.15876-0.51075-0.18576-0.92476-0.1726-2.1312-1.1811-2.1312-2.6622zm10.901 3.6454c-1.2047 0-2.36 0.47859-3.2118 1.3306s-1.3304 2.0075-1.3304 3.2124v5.4516c0 1.2049 0.47859 2.3604 1.3304 3.2124s2.0072 1.3306 3.2118 1.3306h5.4508c1.2047 0 2.36-0.47859 3.2118-1.3306s1.3304-2.0075 1.3304-3.2124v-5.4516c0-1.2049-0.47859-2.3604-1.3304-3.2124s-2.0072-1.3306-3.2118-1.3306zm5.4508 2.7258c0.48186 0 0.94394 0.19152 1.2847 0.53225 0.34082 0.34082 0.53217 0.80307 0.53217 1.285v5.4516c0 0.48194-0.19135 0.94411-0.53217 1.2849-0.34073 0.34082-0.80281 0.53225-1.2847 0.53225h-5.4508c-0.48186 0-0.94402-0.19144-1.2848-0.53225s-0.53217-0.80298-0.53217-1.2849v-5.4516c0-0.48194 0.19144-0.94419 0.53217-1.285 0.34073-0.34073 0.8029-0.53225 1.2848-0.53225z';
 const CONCURRENCY  = 5;
 const MAX_FACILITIES = 300;
 
 // ── Module state ───────────────────────────────────────────────────────────────
 
-let _facilities  = [];
-let _regionMap   = null;
-let _loaded      = false;
-let _loading     = false;
-let _abortFlag   = false;
-let _simulation  = null;
-let _nodes       = [];
-let _links       = [];
-let _userMap     = new Map();      // userId → node (dedup)
+let _facilities   = [];
+let _regionMap    = null;
+let _loaded       = false;
+let _loading      = false;
+let _abortFlag    = false;
+let _simulation   = null;
+let _nodes        = [];
+let _links        = [];
+let _userMap      = new Map();     // userId → node (dedup)
 let _facAccessMap = new Map();     // facilityURN → [{ userId, name, email, accessLevel }]
 
+
 // ── Public API ─────────────────────────────────────────────────────────────────
+
+/** Kept for API compatibility — photos now load via public CDN for all users. */
+export function setCurrentUser(_userId, _pictureUrl) { /* no-op */ }
 
 export function render(facilities, regionMap) {
     _facilities  = facilities.slice(0, MAX_FACILITIES);
@@ -252,16 +265,16 @@ function renderGraph(wrap) {
                     <!-- Edge / border colors = access level -->
                     <span class="text-dark-text-secondary opacity-60 mr-0.5">Access:</span>
                     <span class="flex items-center gap-1.5">
-                        <svg width="18" height="6"><line x1="0" y1="3" x2="18" y2="3" stroke="${ACCESS_COLORS[4]}" stroke-width="2.5" stroke-linecap="round"/></svg>Owner
+                        <svg width="18" height="6"><line x1="0" y1="3" x2="18" y2="3" stroke="${ACCESS_COLORS[4]}" stroke-width="1.5" stroke-linecap="round"/></svg>Owner
                     </span>
                     <span class="flex items-center gap-1.5">
-                        <svg width="18" height="6"><line x1="0" y1="3" x2="18" y2="3" stroke="${ACCESS_COLORS[3]}" stroke-width="2.5" stroke-linecap="round"/></svg>Manage
+                        <svg width="18" height="6"><line x1="0" y1="3" x2="18" y2="3" stroke="${ACCESS_COLORS[3]}" stroke-width="1.5" stroke-linecap="round"/></svg>Manage
                     </span>
                     <span class="flex items-center gap-1.5">
-                        <svg width="18" height="6"><line x1="0" y1="3" x2="18" y2="3" stroke="${ACCESS_COLORS[2]}" stroke-width="2.5" stroke-linecap="round"/></svg>ReadWrite
+                        <svg width="18" height="6"><line x1="0" y1="3" x2="18" y2="3" stroke="${ACCESS_COLORS[2]}" stroke-width="1.5" stroke-linecap="round"/></svg>ReadWrite
                     </span>
                     <span class="flex items-center gap-1.5">
-                        <svg width="18" height="6"><line x1="0" y1="3" x2="18" y2="3" stroke="${ACCESS_COLORS[1]}" stroke-width="2.5" stroke-linecap="round"/></svg>Read
+                        <svg width="18" height="6"><line x1="0" y1="3" x2="18" y2="3" stroke="${ACCESS_COLORS[1]}" stroke-width="1.5" stroke-linecap="round"/></svg>Read
                     </span>
                     <!-- Node shapes -->
                     <span class="opacity-60 mx-0.5">|</span>
@@ -323,6 +336,18 @@ function initSimulation(d3) {
     const svg = d3.select(svgEl);
     svg.selectAll('*').remove();
 
+    // ── Defs: circular clip paths for all real-user nodes ─────────────────────
+    const userOnlyNodes = _nodes.filter(n => n.type === 'user' && !n.isApp);
+    if (userOnlyNodes.length) {
+        const defs = svg.append('defs');
+        defs.selectAll('clipPath')
+            .data(userOnlyNodes)
+            .join('clipPath')
+            .attr('id', d => `clip-${safeId(d.id)}`)
+            .append('circle')
+            .attr('r', UR);
+    }
+
     // Root group — zoom/pan target
     const g = svg.append('g');
     svg.call(
@@ -352,8 +377,8 @@ function initSimulation(d3) {
         .data(_links)
         .join('line')
         .attr('stroke',         d => ACCESS_COLORS[d.accessLevel] ?? ACCESS_COLORS[1])
-        .attr('stroke-opacity', 0.6)
-        .attr('stroke-width',   2);
+        .attr('stroke-opacity', 0.7)
+        .attr('stroke-width',   1);
 
     // ── Node groups ────────────────────────────────────────────────────────────
     const drag = d3.drag()
@@ -403,10 +428,13 @@ function initSimulation(d3) {
         .attr('stroke',       APP_STROKE)
         .attr('stroke-width', 1.5);
 
-    appSel.append('text')
-        .attr('text-anchor', 'middle').attr('dy', '0.38em')
-        .attr('font-size', 16)
-        .text('⚙');
+    // ApiKeyIcon from dt-client/res/icons/ApiKeyIcon.svg — scaled to fit inside the rect
+    appSel.append('g')
+        .attr('transform', `scale(${UR * 1.5 / 64}) translate(-32,-32)`)
+        .append('path')
+        .attr('d', API_KEY_PATH)
+        .attr('fill', APP_STROKE)
+        .attr('fill-rule', 'evenodd');
 
     // App name label below
     appSel.append('text')
@@ -439,7 +467,26 @@ function initSimulation(d3) {
         .attr('fill',          identColor)
         .text(d => initials(d.name || d.email));
 
-    // 3. Name label below the circle
+    // 3. Profile photo — public Autodesk CDN, same URL format used by the Tandem client.
+    //    Starts hidden; revealed on successful load to avoid the black-box-while-loading glitch.
+    //    On error (user has no photo) → element removed and initials remain.
+    userSel.append('image')
+        .attr('class',               'node-photo')
+        .attr('href',                d => profileImageURL(d.id))
+        .attr('x',                   -UR).attr('y', -UR)
+        .attr('width',               UR * 2).attr('height', UR * 2)
+        .attr('clip-path',           d => `url(#clip-${safeId(d.id)})`)
+        .attr('preserveAspectRatio', 'xMidYMid slice')
+        .attr('visibility',          'hidden')
+        .on('load', function() {
+            const grp = d3.select(this.parentNode);
+            grp.select('.node-photo').attr('visibility', 'visible');
+            grp.select('.initials-text').attr('visibility', 'hidden');
+            grp.select('circle').attr('fill', 'transparent').attr('fill-opacity', 1);
+        })
+        .on('error', function() { d3.select(this).remove(); });
+
+    // 4. Name label below the circle
     userSel.append('text')
         .attr('text-anchor', 'middle')
         .attr('dy',          UR + 12)
@@ -483,8 +530,8 @@ function highlightNode(node, linkSel, nodeSel) {
     });
 
     linkSel
-        .attr('stroke-opacity', (_, i) => activeLinks.has(i) ? 0.95 : 0.1)
-        .attr('stroke-width',   (_, i) => activeLinks.has(i) ? 3    : 1.5);
+        .attr('stroke-opacity', (_, i) => activeLinks.has(i) ? 0.95 : 0.08)
+        .attr('stroke-width',   (_, i) => activeLinks.has(i) ? 1.5  : 0.75);
 
     nodeSel.style('opacity', d => connected.has(d.id) ? 1 : 0.2);
 
@@ -492,7 +539,7 @@ function highlightNode(node, linkSel, nodeSel) {
 }
 
 function clearHighlight(linkSel, nodeSel) {
-    linkSel.attr('stroke-opacity', 0.6).attr('stroke-width', 2);
+    linkSel.attr('stroke-opacity', 0.7).attr('stroke-width', 1);
     nodeSel.style('opacity', 1);
     const panel = document.getElementById('access-panel');
     if (panel) panel.innerHTML = `<p class="text-xs text-dark-text-secondary text-center py-8">Click any node to see details</p>`;
@@ -611,9 +658,11 @@ function renderPanel(node) {
                     <div class="min-w-0">
                         <div class="text-sm font-semibold text-dark-text leading-tight truncate">${esc(node.name || 'Unknown')}</div>
                         <div class="text-xs text-dark-text-secondary mt-0.5 truncate">${esc(node.email)}</div>
-                        <div class="text-xs mt-1" style="color:${color}">
-                            ${ACCESS_LABELS[node.maxAccessLevel ?? 1] ?? 'Read'} (highest)
-                        </div>
+                        <div class="text-xs mt-1" style="color:${color}">${(() => {
+                            const label = ACCESS_LABELS[node.maxAccessLevel ?? 1] ?? 'Read';
+                            const mixed = node.facilityAccess.some(f => f.accessLevel !== node.maxAccessLevel);
+                            return mixed ? `${label} (highest)` : label;
+                        })()}</div>
                     </div>
                 </div>
                 <p class="text-xs text-dark-text-secondary">
@@ -622,7 +671,25 @@ function renderPanel(node) {
                 <div class="space-y-0">${rows}</div>
             </div>`;
 
+        // Try to swap the initials avatar for a real photo (silent fallback if unavailable)
+        swapPanelPhoto(node.id, `panel-avatar-${safeId(node.id)}`, color);
     }
+}
+
+/**
+ * Attempts to load a profile photo from the public Autodesk CDN and replace
+ * the initials <div> in the info panel with a real photo.
+ */
+function swapPanelPhoto(userId, avatarDivId, borderColor) {
+    const img = new Image();
+    img.onload = () => {
+        const div = document.getElementById(avatarDivId);
+        if (!div) return;
+        img.className = 'w-12 h-12 rounded-full object-cover shrink-0';
+        img.style.border = `2px solid ${borderColor}`;
+        div.replaceWith(img);
+    };
+    img.src = profileImageURL(userId);
 }
 
 // ── Utilities ──────────────────────────────────────────────────────────────────
