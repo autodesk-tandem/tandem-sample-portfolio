@@ -17,6 +17,8 @@
  *           getLastSeenStreamValues, getModels, getHistory
  */
 
+const ICON_STREAMS = `<svg class="w-3 h-3 inline-block shrink-0 align-middle" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12h2l3-7 4 14 3-8 2 1h4"/></svg>`;
+
 import {
     getTwinHistory,
     getStreams,
@@ -365,7 +367,7 @@ function buildStreamChip(sh) {
 
     if (sh.offline > 0) {
         parts.push(`<span class="px-1.5 py-0.5 rounded text-xs font-medium" style="background:#7f1d1d22;color:#f87171;border:1px solid #7f1d1d66">
-            📡 ${sh.offline} offline
+            ${ICON_STREAMS} ${sh.offline} offline
         </span>`);
     }
     if (sh.warning > 0) {
@@ -375,10 +377,10 @@ function buildStreamChip(sh) {
     }
     if (sh.offline === 0 && sh.warning === 0 && sh.total > 0) {
         parts.push(`<span class="px-1.5 py-0.5 rounded text-xs" style="background:#06432022;color:#34d399;border:1px solid #06432066">
-            📡 ${sh.online}/${total} active
+            ${ICON_STREAMS} ${sh.online}/${total} active
         </span>`);
     } else if (sh.online > 0) {
-        parts.push(`<span class="text-xs text-dark-text-secondary opacity-60">📡 ${sh.online} ok</span>`);
+        parts.push(`<span class="text-xs text-dark-text-secondary opacity-60">${ICON_STREAMS} ${sh.online} ok</span>`);
     }
 
     return parts.join('');

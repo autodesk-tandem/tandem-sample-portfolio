@@ -104,14 +104,24 @@ export function renderAccountBanner(metrics, accountName) {
         return b + ' B';
     };
 
+    // updatedOn comes back as "YYYYMMDD" (e.g. "20261005")
+    const fmtUpdatedOn = (raw) => {
+        if (!raw || raw.length < 8) return null;
+        const y = raw.slice(0, 4), m = raw.slice(4, 6), d = raw.slice(6, 8);
+        const date = new Date(`${y}-${m}-${d}T00:00:00`);
+        if (isNaN(date)) return null;
+        return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+    };
+    const updatedLabel = fmtUpdatedOn(metrics.updatedOn);
+
     const stats = [
-        { label: 'Facilities',   value: (metrics.activeFacilityCount ?? 0).toLocaleString(),        color: '#0696D7' },
-        { label: 'Models',       value: (metrics.totalNbOfModel       ?? 0).toLocaleString(),        color: '#10B981' },
-        { label: 'Streams',      value: (metrics.numStreams            ?? 0).toLocaleString(),        color: '#EC4899' },
-        { label: 'Assets',       value: (metrics.totalNbOfAssets       ?? 0).toLocaleString(),       color: '#F59E0B' },
-        { label: 'Connections',  value: (metrics.numDataConn           ?? 0).toLocaleString(),        color: '#14B8A6' },
-        { label: 'Elements',     value: (metrics.totalNbOfElement      ?? 0).toLocaleString(),       color: '#8B5CF6' },
-        { label: 'Storage',      value: fmtBytes(metrics.totalBytesUsed ?? 0),                       color: '#F97316' },
+        { label: 'Facilities',   value: (metrics.activeFacilityCount ?? 0).toLocaleString(), color: '#0696D7' },
+        { label: 'Models',       value: (metrics.totalNbOfModel       ?? 0).toLocaleString(), color: '#10B981' },
+        { label: 'Streams',      value: (metrics.numStreams            ?? 0).toLocaleString(), color: '#EC4899' },
+        { label: 'Assets',       value: (metrics.totalNbOfAssets       ?? 0).toLocaleString(), color: '#F59E0B' },
+        { label: 'Connections',  value: (metrics.numDataConn           ?? 0).toLocaleString(), color: '#14B8A6' },
+        { label: 'Elements',     value: (metrics.totalNbOfElement      ?? 0).toLocaleString(), color: '#8B5CF6' },
+        { label: 'Storage',      value: fmtBytes(metrics.totalBytesUsed ?? 0),                color: '#F97316' },
     ];
 
     bannerEl.innerHTML = `
@@ -123,6 +133,11 @@ export function renderAccountBanner(metrics, accountName) {
                 <span class="text-dark-text-secondary">${s.label}</span>
                 <span class="font-semibold text-dark-text">${s.value}</span>
             </span>`).join('')}
+            ${updatedLabel ? `
+            <span class="ml-auto text-dark-text-secondary italic shrink-0"
+                  title="These totals are pre-computed by Tandem and may lag real-time counts by up to one day.">
+                as of ${updatedLabel}
+            </span>` : ''}
         </div>`;
 }
 
@@ -695,6 +710,15 @@ async function loadFacilityData(facility, card) {
 
         setCachedSummary(facility.urn, summary);
         populateCard(card, summary);
+
+        // Back-patch statsStore if getFacilityStats() already ran before we had the template name.
+        // Without this, the leaderboard shows "No template applied" for all facilities because
+        // stats often resolve before facility data (template) during account switches.
+        const existingStats = statsStore.get(facility.urn);
+        if (existingStats && templateName && existingStats.templateName !== templateName) {
+            statsStore.set(facility.urn, { ...existingStats, templateName });
+            if (viewMode === 'leaderboard') renderLeaderboard();
+        }
     } catch (err) {
         console.warn(`Failed to load summary for ${facility.name}:`, err);
         setCachedSummary(facility.urn, {
@@ -750,7 +774,9 @@ function showCardError(card) {
  */
 export function updateCardStats(urn, stats) {
     // Always store in the stats store (leaderboard reads from here).
-    // Pull templateName from the facility cache — it arrives via loadFacilityData.
+    // templateName comes from loadFacilityData (async, may not have run yet).
+    // If it's already in the cache, great. If not, loadFacilityData will back-patch
+    // statsStore once it completes (see the setCachedSummary block in loadFacilityData).
     if (!stats.error) {
         const cached = getCachedSummary(urn);
         statsStore.set(urn, {

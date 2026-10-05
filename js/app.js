@@ -17,6 +17,7 @@ import {
     getFacilitiesForGroup,
     getFacilityStats,
     getGroupMetrics,
+    getInlineTemplate,
     cleanupThumbnailURLs,
 } from './api.js';
 import { RegionLabelMap } from '../tandem/constants.js';
@@ -29,7 +30,7 @@ import {
     updateCardStats,
 } from './views/portfolioView.js';
 import { render as renderMap, invalidateMapSize } from './views/mapView.js';
-import { render as renderComparison } from './views/comparisonView.js';
+import { render as renderComparison, updateStats as updateCompareStats } from './views/compareView.js';
 import * as accessView    from './views/accessView.js';
 import * as activityView  from './views/activityView.js';
 import * as accountsView  from './views/accountsView.js';
@@ -294,15 +295,32 @@ async function loadAllFacilityStats(facilities, accountAtStart) {
             const f = facilities[cursor++];
             const region = facilityRegionMap.get(f.urn) ?? f.region ?? 'us';
             try {
-                const stats = await getFacilityStats(f.urn, region);
-                // Merge stats into the summary cache
+                // Fetch stats and template in parallel.
+                // Template is fetched here (not just in loadFacilityData) so the leaderboard
+                // has template names even when cards are never rendered (leaderboard-only mode).
                 const cached = getCachedSummary(f.urn);
-                if (cached) setCachedSummary(f.urn, { ...cached, ...stats, statsLoaded: true });
-                // Update the card DOM badge (no-op if card isn't rendered yet)
+                const [stats, template] = await Promise.all([
+                    getFacilityStats(f.urn, region),
+                    cached?.templateName !== undefined
+                        ? Promise.resolve(null)   // already in cache — skip duplicate fetch
+                        : getInlineTemplate(f.urn, region).catch(() => null),
+                ]);
+                const templateName = template?.name ?? cached?.templateName ?? null;
+                // Write template + stats into the cache before calling updateCardStats
+                // so updateCardStats finds the correct templateName when it reads the cache.
+                const fresh = getCachedSummary(f.urn);
+                setCachedSummary(f.urn, {
+                    ...(fresh ?? { urn: f.urn, name: f.name, region }),
+                    ...stats,
+                    templateName,
+                    statsLoaded: true,
+                });
                 updateCardStats(f.urn, stats);
+                updateCompareStats(f.urn, stats);
             } catch (err) {
                 console.warn(`Stats load failed for ${f.name}:`, err);
                 updateCardStats(f.urn, { error: true });
+                updateCompareStats(f.urn, { error: true });
             }
         }
     }
