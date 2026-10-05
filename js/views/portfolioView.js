@@ -66,6 +66,7 @@ const loadMoreBtn = document.getElementById('loadMoreBtn');
 const loadMoreCtr = document.getElementById('loadMoreContainer');
 const statusEl    = document.getElementById('portfolioStatus');
 const countEl     = document.getElementById('portfolioCount');
+const bannerEl    = document.getElementById('accountMetricsBanner');
 
 /**
  * Initialise the view with a new account's facilities.
@@ -74,6 +75,57 @@ const countEl     = document.getElementById('portfolioCount');
  * @param {Array<{urn: string, name: string, region: string}>} facilities
  * @param {Map<string, string>} regionMap - facilityURN → region string
  */
+/**
+ * Show account-level metrics in the banner above the facility grid.
+ * Called by app.js after getGroupMetrics resolves.
+ * @param {{activeFacilityCount, totalNbOfModel, totalNbOfElement, totalNbOfAssets}|null} metrics
+ * @param {string} accountName
+ */
+export function renderAccountBanner(metrics, accountName) {
+    if (!bannerEl) return;
+    if (!metrics) { bannerEl.innerHTML = ''; return; }
+
+    if (metrics._forbidden) {
+        bannerEl.innerHTML = `
+            <div class="flex items-center gap-2 px-3 py-2 rounded bg-dark-card border border-dark-border text-xs text-amber-500">
+                <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+                </svg>
+                Account metrics not available — you may not be an owner of this account.
+            </div>`;
+        return;
+    }
+
+    const fmtBytes = (b) => {
+        if (b >= 1_073_741_824) return (b / 1_073_741_824).toFixed(1) + ' GB';
+        if (b >= 1_048_576)     return (b / 1_048_576).toFixed(1) + ' MB';
+        if (b >= 1_024)         return (b / 1_024).toFixed(0) + ' KB';
+        return b + ' B';
+    };
+
+    const stats = [
+        { label: 'Facilities',   value: (metrics.activeFacilityCount ?? 0).toLocaleString(),        color: '#0696D7' },
+        { label: 'Models',       value: (metrics.totalNbOfModel       ?? 0).toLocaleString(),        color: '#10B981' },
+        { label: 'Streams',      value: (metrics.numStreams            ?? 0).toLocaleString(),        color: '#EC4899' },
+        { label: 'Assets',       value: (metrics.totalNbOfAssets       ?? 0).toLocaleString(),       color: '#F59E0B' },
+        { label: 'Connections',  value: (metrics.numDataConn           ?? 0).toLocaleString(),        color: '#14B8A6' },
+        { label: 'Elements',     value: (metrics.totalNbOfElement      ?? 0).toLocaleString(),       color: '#8B5CF6' },
+        { label: 'Storage',      value: fmtBytes(metrics.totalBytesUsed ?? 0),                       color: '#F97316' },
+    ];
+
+    bannerEl.innerHTML = `
+        <div class="flex flex-wrap items-center gap-4 px-3 py-2 rounded bg-dark-card border border-dark-border text-xs">
+            <span class="text-dark-text-secondary font-medium shrink-0">Account totals:</span>
+            ${stats.map(s => `
+            <span class="flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full shrink-0" style="background:${s.color}"></span>
+                <span class="text-dark-text-secondary">${s.label}</span>
+                <span class="font-semibold text-dark-text">${s.value}</span>
+            </span>`).join('')}
+        </div>`;
+}
+
 export function render(facilities, regionMap) {
     allFacilities     = facilities;
     facilityRegionMap = regionMap;

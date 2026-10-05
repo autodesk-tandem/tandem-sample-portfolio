@@ -72,14 +72,39 @@ export async function getGroups() {
   try {
     const requestPath = `${tandemBaseURL}/groups`;
     const response = await fetch(requestPath, makeRequestOptionsGET());
-    
+
     if (!response.ok) {
       throw new Error(`Failed to fetch groups: ${response.statusText}`);
     }
-    
+
     return await response.json();
   } catch (error) {
     console.error('Error fetching groups:', error);
+    return null;
+  }
+}
+
+/**
+ * Get usage metrics for a group (account).
+ * Returns activeFacilityCount, totalNbOfModel, totalNbOfElement,
+ * totalNbOfElementWithProp, totalNbOfAssets.
+ *
+ * @param {string} groupURN  - Group URN (urn:adsk.dtg:...)
+ * @returns {Promise<{activeFacilityCount:number, totalNbOfModel:number,
+ *                    totalNbOfElement:number, totalNbOfElementWithProp:number,
+ *                    totalNbOfAssets:number}|null>}
+ */
+export async function getGroupMetrics(groupURN) {
+  try {
+    const requestPath = `${tandemBaseURL}/groups/${groupURN}/metrics`;
+    const response = await fetch(requestPath, makeRequestOptionsGET());
+    if (response.status === 403) return { _forbidden: true };
+    if (!response.ok) throw new Error(`Failed to fetch group metrics: ${response.statusText}`);
+    const data = await response.json();
+    // API returns an array with one item
+    return Array.isArray(data) ? data[0] ?? null : data;
+  } catch (error) {
+    console.error('Error fetching group metrics:', error);
     return null;
   }
 }
@@ -198,26 +223,25 @@ export async function getFacilityInfo(facilityURN, region) {
 }
 
 /**
- * Get the applied (inline) facility template, which contains the human-readable name.
- * The /twins/{urn} skeleton only contains the classification UUID — the name requires
- * a separate call to /twins/{urn}/inlinetemplate?flatten.
+ * Get the facility template metadata (name, uuid, classificationId, description).
+ * Lighter than /inlinetemplate?flatten — returns just the template header, not all parameters.
  * Returns null if no template is applied (404) or on error.
  *
  * @param {string} facilityURN
  * @param {string} region
- * @returns {Promise<{name: string}|null>}
+ * @returns {Promise<{name: string, uuid: string, classificationId: string}|null>}
  */
 export async function getInlineTemplate(facilityURN, region) {
   try {
-    const requestPath = `${tandemBaseURL}/twins/${facilityURN}/inlinetemplate?flatten`;
+    const requestPath = `${tandemBaseURL}/twins/${facilityURN}/template`;
     const response = await fetch(requestPath, makeRequestOptionsGET(region));
 
     if (response.status === 404) return null; // no template applied
-    if (!response.ok) throw new Error(`Failed to fetch inline template: ${response.statusText}`);
+    if (!response.ok) throw new Error(`Failed to fetch facility template: ${response.statusText}`);
 
     return await response.json();
   } catch (error) {
-    console.error('Error fetching inline template:', error);
+    console.error('Error fetching facility template:', error);
     return null;
   }
 }

@@ -149,6 +149,10 @@
                         class="tab-btn px-4 py-2.5 text-sm font-medium text-dark-text-secondary hover:text-dark-text transition border-b-2 border-transparent">
                     Activity
                 </button>
+                <button data-tab="accounts"
+                        class="tab-btn px-4 py-2.5 text-sm font-medium text-dark-text-secondary hover:text-dark-text transition border-b-2 border-transparent">
+                    Accounts
+                </button>
             </div>
         </div>
     </nav>
@@ -180,6 +184,9 @@
         <div id="view-portfolio">
             <!-- Filter bar (rendered by portfolioView.js) -->
             <div id="filterBar" class="border-b border-dark-border mb-4"></div>
+
+            <!-- Account metrics banner (rendered by portfolioView.js) -->
+            <div id="accountMetricsBanner" class="mb-4"></div>
 
             <!-- Status bar -->
             <div class="flex items-center justify-between mb-4">
@@ -228,8 +235,14 @@
 
         <!-- Activity View -->
         <div id="view-activity" class="hidden">
-            <!-- Rendered by activityView.js (not yet implemented) -->
+            <!-- Rendered by activityView.js -->
             <div id="activityContent"></div>
+        </div>
+
+        <!-- Accounts View -->
+        <div id="view-accounts" class="hidden">
+            <!-- Rendered by accountsView.js -->
+            <div id="accountsContent"></div>
         </div>
 
     </main>

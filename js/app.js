@@ -16,12 +16,14 @@ import {
     getUserResources,
     getFacilitiesForGroup,
     getFacilityStats,
+    getGroupMetrics,
     cleanupThumbnailURLs,
 } from './api.js';
 import { RegionLabelMap } from '../tandem/constants.js';
 import { clearFacilityCache, getCachedSummary, setCachedSummary } from './state/facilityCache.js';
 import {
     render as renderPortfolio,
+    renderAccountBanner,
     initLoadMore,
     setViewDetailsCallback,
     updateCardStats,
@@ -30,6 +32,7 @@ import { render as renderMap, invalidateMapSize } from './views/mapView.js';
 import { render as renderComparison } from './views/comparisonView.js';
 import * as accessView    from './views/accessView.js';
 import * as activityView  from './views/activityView.js';
+import * as accountsView  from './views/accountsView.js';
 
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 const loginBtn        = document.getElementById('loginBtn');
@@ -229,6 +232,15 @@ async function switchAccount(accountName) {
     renderComparison(facilities, facilityRegionMap);
     accessView.render(facilities, facilityRegionMap);
     activityView.render(facilities, facilityRegionMap);
+    accountsView.render(accounts);
+
+    // Load account-level metrics banner (fire-and-forget; clears banner on switch)
+    renderAccountBanner(null, accountName); // clear stale banner immediately
+    if (account.id !== '@me') {
+        getGroupMetrics(account.id)
+            .then(m => renderAccountBanner(m, accountName))
+            .catch(() => renderAccountBanner(null, accountName));
+    }
 
     // If the user is already on the Access tab, start loading immediately
     if (currentTab === 'access') accessView.activate();
@@ -301,7 +313,7 @@ async function loadAllFacilityStats(facilities, accountAtStart) {
 
 // ── Tab switching ─────────────────────────────────────────────────────────────
 
-const TABS = ['portfolio', 'map', 'access', 'compare', 'activity'];
+const TABS = ['portfolio', 'map', 'access', 'compare', 'activity', 'accounts'];
 
 function switchTab(tabId) {
     currentTab = tabId;
@@ -321,6 +333,7 @@ function switchTab(tabId) {
     // Access graph loads lazily on first visit
     if (tabId === 'access')   accessView.activate();
     if (tabId === 'activity') activityView.activate();
+    if (tabId === 'accounts') accountsView.activate();
 }
 
 // ── Application init ──────────────────────────────────────────────────────────
