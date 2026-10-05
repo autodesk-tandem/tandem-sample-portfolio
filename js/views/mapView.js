@@ -142,12 +142,16 @@ function buildPopup(facility) {
     const externalLinks = (googleUrl && appleUrl) ? `
         <div style="display:flex;gap:10px;margin:6px 0 2px;">
             <a href="${googleUrl}" target="_blank" rel="noopener"
-               style="font-size:11px;color:#a0a0a0;text-decoration:none;">
-                🗺 Google Maps ↗
+               style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:#a0a0a0;text-decoration:none;">
+                <img src="https://maps.google.com/favicon.ico"
+                     width="13" height="13" style="border-radius:2px;vertical-align:middle;" alt="Google Maps">
+                Google Maps ↗
             </a>
             <a href="${appleUrl}" target="_blank" rel="noopener"
-               style="font-size:11px;color:#a0a0a0;text-decoration:none;">
-                🍎 Apple Maps ↗
+               style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:#a0a0a0;text-decoration:none;">
+                <img src="https://maps.apple.com/favicon.ico"
+                     width="13" height="13" style="border-radius:2px;vertical-align:middle;" alt="Apple Maps">
+                Apple Maps ↗
             </a>
         </div>` : '';
 
