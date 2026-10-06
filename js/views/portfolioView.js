@@ -60,6 +60,8 @@ const statsStore = new Map(); // urn → { streamCount, taggedAssetCount }
 // Callback registered by app.js — called when user clicks "View Details →" on a card
 let _onViewDetails = null;
 export function setViewDetailsCallback(fn) { _onViewDetails = fn; }
+let _onRetryStats = null;
+export function setRetryStatsCallback(fn) { _onRetryStats = fn; }
 
 const grid        = document.getElementById('facilityGrid');
 const loadMoreBtn = document.getElementById('loadMoreBtn');
@@ -788,14 +790,25 @@ export function updateCardStats(urn, stats) {
 
     // Update the card if it's in the DOM
     const card = grid.querySelector(`[data-urn="${CSS.escape(urn)}"]`);
-    if (card && !stats.error) {
-        const streamsEl = card.querySelector('.stat-streams');
-        if (streamsEl) {
-            streamsEl.innerHTML = `${ICON_STREAMS} <span class="text-dark-text font-medium">${stats.streamCount}</span> streams`;
-        }
-        const assetsEl = card.querySelector('.stat-assets');
-        if (assetsEl) {
-            assetsEl.innerHTML = `${ICON_ASSETS} <span class="text-dark-text font-medium">${stats.taggedAssetCount}</span> assets`;
+    if (card) {
+        if (stats.error) {
+            // Replace spinners with an error/timeout indicator + retry button
+            const streamsEl = card.querySelector('.stat-streams');
+            const assetsEl  = card.querySelector('.stat-assets');
+            const msg = stats.timedOut ? 'Timed out' : 'Failed to load';
+            if (streamsEl) streamsEl.innerHTML =
+                `<span class="text-dark-text-secondary opacity-60 text-xs">${msg}</span>`;
+            if (assetsEl) assetsEl.innerHTML =
+                `<button class="stat-retry text-xs text-tandem-blue hover:underline" data-retry-urn="${escapeHtml(urn)}">Retry</button>`;
+        } else {
+            const streamsEl = card.querySelector('.stat-streams');
+            if (streamsEl) {
+                streamsEl.innerHTML = `${ICON_STREAMS} <span class="text-dark-text font-medium">${stats.streamCount}</span> streams`;
+            }
+            const assetsEl = card.querySelector('.stat-assets');
+            if (assetsEl) {
+                assetsEl.innerHTML = `${ICON_ASSETS} <span class="text-dark-text font-medium">${stats.taggedAssetCount}</span> assets`;
+            }
         }
     }
 
@@ -837,5 +850,8 @@ export function initLoadMore() {
     grid.addEventListener('click', e => {
         const btn = e.target.closest('[data-view-details]');
         if (btn && _onViewDetails) _onViewDetails(btn.dataset.viewDetails);
+
+        const retryBtn = e.target.closest('[data-retry-urn]');
+        if (retryBtn && _onRetryStats) _onRetryStats(retryBtn.dataset.retryUrn);
     });
 }

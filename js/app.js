@@ -27,6 +27,7 @@ import {
     renderAccountBanner,
     initLoadMore,
     setViewDetailsCallback,
+    setRetryStatsCallback,
     updateCardStats,
 } from './views/portfolioView.js';
 import { render as renderMap, invalidateMapSize } from './views/mapView.js';
@@ -297,7 +298,8 @@ function openDetails(urn) {
  * @param {string} accountAtStart - snapshot of currentAccountName when loading began
  */
 async function loadAllFacilityStats(facilities, accountAtStart) {
-    const CONCURRENCY = 5;
+    const CONCURRENCY      = 5;
+    const FACILITY_TIMEOUT = 30_000; // ms — give up on a single facility after 30 s
     let cursor = 0;
 
     async function worker() {
@@ -306,16 +308,26 @@ async function loadAllFacilityStats(facilities, accountAtStart) {
             const f = facilities[cursor++];
             const region = facilityRegionMap.get(f.urn) ?? f.region ?? 'us';
             try {
+                // Race the stats load against a timeout so a hung request
+                // never permanently blocks this worker slot.
+                const timeoutPromise = new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error('timeout')), FACILITY_TIMEOUT)
+                );
+
                 // Fetch stats and template in parallel.
                 // Template is fetched here (not just in loadFacilityData) so the leaderboard
                 // has template names even when cards are never rendered (leaderboard-only mode).
                 const cached = getCachedSummary(f.urn);
-                const [stats, template] = await Promise.all([
-                    getFacilityStats(f.urn, region),
-                    cached?.templateName !== undefined
-                        ? Promise.resolve(null)   // already in cache — skip duplicate fetch
-                        : getInlineTemplate(f.urn, region).catch(() => null),
+                const [stats, template] = await Promise.race([
+                    Promise.all([
+                        getFacilityStats(f.urn, region),
+                        cached?.templateName !== undefined
+                            ? Promise.resolve(null)   // already in cache — skip duplicate fetch
+                            : getInlineTemplate(f.urn, region).catch(() => null),
+                    ]),
+                    timeoutPromise,
                 ]);
+
                 const templateName = template?.name ?? cached?.templateName ?? null;
                 // Write template + stats into the cache before calling updateCardStats
                 // so updateCardStats finds the correct templateName when it reads the cache.
@@ -329,8 +341,9 @@ async function loadAllFacilityStats(facilities, accountAtStart) {
                 updateCardStats(f.urn, stats);
                 updateCompareStats(f.urn, stats);
             } catch (err) {
-                console.warn(`Stats load failed for ${f.name}:`, err);
-                updateCardStats(f.urn, { error: true });
+                const isTimeout = err?.message === 'timeout';
+                console.warn(`Stats load ${isTimeout ? 'timed out' : 'failed'} for ${f.name}:`, err);
+                updateCardStats(f.urn, { error: true, timedOut: isTimeout });
                 updateCompareStats(f.urn, { error: true });
             }
         }
@@ -390,6 +403,14 @@ async function initialize() {
 
     // Event: "View Details →" on portfolio cards
     setViewDetailsCallback(openDetails);
+
+    // Event: "Retry" on cards that timed out or failed to load stats
+    setRetryStatsCallback(urn => {
+        const facility = (accounts.find(a => a.name === currentAccountName)?.facilities ?? [])
+            .find(f => f.urn === urn);
+        if (!facility) return;
+        loadAllFacilityStats([facility], currentAccountName).catch(() => {});
+    });
 
     // Event: load more button + grid click delegation
     initLoadMore();
