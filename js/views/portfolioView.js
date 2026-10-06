@@ -63,6 +63,9 @@ export function setViewDetailsCallback(fn) { _onViewDetails = fn; }
 let _onRetryStats = null;
 export function setRetryStatsCallback(fn) { _onRetryStats = fn; }
 
+/** Read-only access to the stats store for other views (e.g. ticketsView, activityView) */
+export function getStatsStore() { return statsStore; }
+
 const grid        = document.getElementById('facilityGrid');
 const loadMoreBtn = document.getElementById('loadMoreBtn');
 const loadMoreCtr = document.getElementById('loadMoreContainer');
@@ -784,6 +787,8 @@ export function updateCardStats(urn, stats) {
         statsStore.set(urn, {
             streamCount:      stats.streamCount      ?? 0,
             taggedAssetCount: stats.taggedAssetCount ?? 0,
+            openTicketCount:  stats.openTicketCount  ?? 0,
+            closedTicketCount: stats.closedTicketCount ?? 0,
             templateName:     cached?.templateName   ?? null,
         });
     }

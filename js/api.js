@@ -1745,14 +1745,17 @@ export async function getFacilityViews(facilityURN, region) {
  */
 export async function getFacilityStats(facilityURN, region) {
   try {
-    const [streams, taggedAssetCount] = await Promise.all([
+    const [streams, taggedAssetCount, tickets] = await Promise.all([
       getStreams(facilityURN, region),
       getTaggedAssetsCount(facilityURN, region),
+      getTickets(facilityURN, region),
     ]);
-    return { streamCount: streams.length, taggedAssetCount };
+    const openTicketCount   = tickets.filter(t => !t[QC.CloseDate]?.[0]).length;
+    const closedTicketCount = tickets.length - openTicketCount;
+    return { streamCount: streams.length, taggedAssetCount, openTicketCount, closedTicketCount };
   } catch (err) {
     console.error('Error fetching facility stats:', err);
-    return { streamCount: 0, taggedAssetCount: 0 };
+    return { streamCount: 0, taggedAssetCount: 0, openTicketCount: 0, closedTicketCount: 0 };
   }
 }
 
