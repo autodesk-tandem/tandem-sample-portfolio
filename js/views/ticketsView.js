@@ -287,49 +287,88 @@ function renderDrillDown(panel, name, region, tickets) {
     const open   = tickets.filter(t => !t[QC.CloseDate]?.[0]);
     const closed = tickets.filter(t =>  t[QC.CloseDate]?.[0]);
 
-    // Priority breakdown for open tickets
-    const byCritPriority = {};
-    PRIORITY_ORDER.forEach(p => { byCritPriority[p] = 0; });
-    open.forEach(t => {
+    // Priority breakdown (across all tickets)
+    const byPriority = {};
+    PRIORITY_ORDER.forEach(p => { byPriority[p] = 0; });
+    tickets.forEach(t => {
         const p = t[QC.Priority]?.[0] ?? 'Unknown';
-        byCritPriority[p] = (byCritPriority[p] ?? 0) + 1;
+        byPriority[p] = (byPriority[p] ?? 0) + 1;
     });
 
     const prioritySummary = PRIORITY_ORDER
-        .filter(p => byCritPriority[p] > 0)
+        .filter(p => byPriority[p] > 0)
         .map(p => {
             const c = PRIORITY_COLOR[p];
             return `<span class="px-1.5 py-0.5 rounded text-xs font-medium"
                          style="background:${c.bg};color:${c.fg};border:1px solid ${c.border}">
-                        ${p}: ${byCritPriority[p]}
+                        ${p}: ${byPriority[p]}
                     </span>`;
         }).join('');
 
-    const ticketRows = [...open, ...closed].map(t => {
-        const isOpen    = !t[QC.CloseDate]?.[0];
-        const priority  = t[QC.Priority]?.[0] ?? 'Unknown';
-        const name_     = t[QC.OName]?.[0] ?? t[QC.Name]?.[0] ?? 'Unnamed Ticket';
-        const openDate  = t[QC.OpenDate]?.[0];
-        const closeDate = t[QC.CloseDate]?.[0];
-        const age       = openDate ? daysOpen(openDate, closeDate) : null;
-        const c         = PRIORITY_COLOR[priority] ?? PRIORITY_COLOR['Unknown'];
+    // Fixed-width pill so all ticket names align on the same column
+    const PILL_W = 'display:inline-block;width:56px;text-align:center;';
 
-        return `
-            <div class="py-2.5 border-b border-dark-border last:border-0">
-                <div class="flex items-start gap-2">
-                    <span class="px-1 py-0.5 rounded text-xs shrink-0 mt-0.5"
-                          style="background:${c.bg};color:${c.fg};border:1px solid ${c.border}">${priority}</span>
-                    <div class="min-w-0 flex-1">
-                        <p class="text-xs font-medium text-dark-text truncate" title="${esc(name_)}">${esc(name_)}</p>
-                        <div class="flex items-center gap-2 mt-0.5 text-xs text-dark-text-secondary">
-                            <span class="${isOpen ? 'text-amber-400' : 'text-dark-text-secondary opacity-60'}">${isOpen ? 'Open' : 'Closed'}</span>
-                            ${age !== null ? `<span>· ${age}d ${isOpen ? 'open' : ''}</span>` : ''}
-                            ${openDate ? `<span>· ${fmtDate(openDate)}</span>` : ''}
+    function buildTicketRows(list, sortKey) {
+        if (!list.length) return `<p class="text-xs text-dark-text-secondary italic py-2">No tickets match this filter.</p>`;
+
+        const sorted = [...list].sort((a, b) => {
+            if (sortKey === 'date') {
+                return (b[QC.OpenDate]?.[0] ?? '').localeCompare(a[QC.OpenDate]?.[0] ?? '');
+            }
+            if (sortKey === 'name') {
+                const na = a[QC.OName]?.[0] ?? a[QC.Name]?.[0] ?? '';
+                const nb = b[QC.OName]?.[0] ?? b[QC.Name]?.[0] ?? '';
+                return na.localeCompare(nb);
+            }
+            // 'priority' (default) — Critical first
+            const pa = PRIORITY_ORDER.indexOf(a[QC.Priority]?.[0] ?? 'Unknown');
+            const pb = PRIORITY_ORDER.indexOf(b[QC.Priority]?.[0] ?? 'Unknown');
+            return pa - pb;
+        });
+
+        return sorted.map(t => {
+            const isOpen    = !t[QC.CloseDate]?.[0];
+            const priority  = t[QC.Priority]?.[0] ?? 'Unknown';
+            const tName     = t[QC.OName]?.[0] ?? t[QC.Name]?.[0] ?? 'Unnamed Ticket';
+            const openDate  = t[QC.OpenDate]?.[0];
+            const closeDate = t[QC.CloseDate]?.[0];
+            const age       = openDate ? daysOpen(openDate, closeDate) : null;
+            const c         = PRIORITY_COLOR[priority] ?? PRIORITY_COLOR['Unknown'];
+            return `
+                <div class="py-2.5 border-b border-dark-border last:border-0">
+                    <div class="flex items-start gap-2">
+                        <span class="py-0.5 rounded text-xs shrink-0 mt-0.5"
+                              style="${PILL_W}background:${c.bg};color:${c.fg};border:1px solid ${c.border}">${priority}</span>
+                        <div class="min-w-0 flex-1">
+                            <p class="text-xs font-medium text-dark-text truncate" title="${esc(tName)}">${esc(tName)}</p>
+                            <div class="flex items-center gap-2 mt-0.5 text-xs text-dark-text-secondary">
+                                <span class="${isOpen ? 'text-amber-400' : 'opacity-60'}">${isOpen ? 'Open' : 'Closed'}</span>
+                                ${age !== null ? `<span>· ${age}d ${isOpen ? 'open' : ''}</span>` : ''}
+                                ${openDate ? `<span>· ${fmtDate(openDate)}</span>` : ''}
+                            </div>
                         </div>
                     </div>
-                </div>
-            </div>`;
-    }).join('');
+                </div>`;
+        }).join('');
+    }
+
+    function filterBtn(value, label, count, current) {
+        const active = current === value;
+        const cls = active
+            ? 'bg-tandem-blue text-white border-tandem-blue'
+            : 'border-dark-border text-dark-text-secondary hover:border-tandem-blue hover:text-tandem-blue';
+        return `<button class="dd-filter-btn px-2.5 py-1 rounded text-xs border transition ${cls}" data-filter="${value}">
+            ${label} <span class="opacity-70">(${count})</span>
+        </button>`;
+    }
+
+    function sortBtn(value, label, current) {
+        const active = current === value;
+        const cls = active
+            ? 'border-tandem-blue text-tandem-blue'
+            : 'border-dark-border text-dark-text-secondary hover:border-dark-text';
+        return `<button class="dd-sort-btn px-2 py-0.5 rounded text-xs border transition ${cls}" data-sort="${value}">${label}</button>`;
+    }
 
     panel.innerHTML = `
         <div class="p-4 space-y-3">
@@ -338,25 +377,65 @@ function renderDrillDown(panel, name, region, tickets) {
                 <p class="text-xs text-dark-text-secondary">${region.toUpperCase()}</p>
             </div>
 
-            <!-- Summary chips -->
-            <div class="flex flex-wrap gap-1.5">
-                <span class="px-1.5 py-0.5 rounded text-xs font-medium"
-                      style="background:#78350f22;color:#fb923c;border:1px solid #78350f66">
-                    ${ICON_TICKET} ${open.length} open
-                </span>
-                ${closed.length ? `<span class="px-1.5 py-0.5 rounded text-xs"
-                      style="background:#37415122;color:#9ca3af;border:1px solid #37415166">
-                    ${closed.length} closed
-                </span>` : ''}
-            </div>
-
             <!-- Priority breakdown -->
             ${prioritySummary ? `<div class="flex flex-wrap gap-1">${prioritySummary}</div>` : ''}
 
+            <!-- Filter + Sort bar -->
+            <div class="flex items-center justify-between gap-2">
+                <div class="flex items-center gap-1" id="dd-filter-bar">
+                    ${filterBtn('all',    'All',    tickets.length, 'all')}
+                    ${filterBtn('open',   'Open',   open.length,    'all')}
+                    ${filterBtn('closed', 'Closed', closed.length,  'all')}
+                </div>
+                <div class="flex items-center gap-1 shrink-0">
+                    <svg class="w-3 h-3 text-dark-text-secondary opacity-60 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12"/>
+                    </svg>
+                    ${sortBtn('priority', 'Priority', 'priority')}
+                    ${sortBtn('date',     'Date',     'priority')}
+                    ${sortBtn('name',     'Name',     'priority')}
+                </div>
+            </div>
+
             <!-- Ticket list -->
-            <div class="text-xs font-semibold text-dark-text uppercase tracking-wide pt-1">Tickets</div>
-            <div>${ticketRows}</div>
+            <div id="dd-ticket-list">${buildTicketRows([...open, ...closed], 'priority')}</div>
         </div>`;
+
+    // Wire filter + sort buttons
+    let currentFilter = 'all';
+    let currentSort   = 'priority';
+
+    function getList() {
+        return currentFilter === 'open'   ? open
+             : currentFilter === 'closed' ? closed
+             : [...open, ...closed];
+    }
+
+    function refreshList() {
+        panel.querySelector('#dd-ticket-list').innerHTML = buildTicketRows(getList(), currentSort);
+    }
+
+    panel.querySelectorAll('.dd-filter-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            currentFilter = btn.dataset.filter;
+            panel.querySelectorAll('.dd-filter-btn').forEach(b => {
+                const a = b.dataset.filter === currentFilter;
+                b.className = `dd-filter-btn px-2.5 py-1 rounded text-xs border transition ${a ? 'bg-tandem-blue text-white border-tandem-blue' : 'border-dark-border text-dark-text-secondary hover:border-tandem-blue hover:text-tandem-blue'}`;
+            });
+            refreshList();
+        });
+    });
+
+    panel.querySelectorAll('.dd-sort-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            currentSort = btn.dataset.sort;
+            panel.querySelectorAll('.dd-sort-btn').forEach(b => {
+                const a = b.dataset.sort === currentSort;
+                b.className = `dd-sort-btn px-2 py-0.5 rounded text-xs border transition ${a ? 'border-tandem-blue text-tandem-blue' : 'border-dark-border text-dark-text-secondary hover:border-dark-text'}`;
+            });
+            refreshList();
+        });
+    });
 }
 
 // ── Utilities ──────────────────────────────────────────────────────────────────
