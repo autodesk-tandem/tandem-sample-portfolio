@@ -408,6 +408,9 @@ async function initialize() {
     // Event: "View Details →" on portfolio cards
     setViewDetailsCallback(openDetails);
 
+    // Event: Activity drill-down "Open in Stats" punch-out
+    activityView.setOpenStatsCallback(openDetails);
+
     // Event: "Retry" on cards that timed out or failed to load stats
     setRetryStatsCallback(urn => {
         const facility = (accounts.find(a => a.name === currentAccountName)?.facilities ?? [])

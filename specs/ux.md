@@ -1,7 +1,7 @@
 # UX Spec
 
-> **Status:** Implemented — reflects built state as of 2026-10-05  
-> **Last updated:** 2026-10-05  
+> **Status:** Implemented — reflects built state as of 2026-10-06  
+> **Last updated:** 2026-10-06  
 > **Role:** UX
 
 ---
@@ -20,11 +20,11 @@
 Top tab bar, always visible. Account selector in the top bar.
 
 ```
-┌───────────────────────────────────────────────────────────────────┐
-│  [Tandem Logo]  Tandem Portfolio    Account: [▼]      [Sign Out]  │
-├─────────┬───────┬────────┬─────────┬──────────┬────────────────── │
-│Portfolio│  Map  │ Access │ Compare │ Activity │ Accounts          │
-└─────────┴───────┴────────┴─────────┴──────────┴───────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  [Tandem Logo]  Tandem Portfolio    Account: [▼]      [Sign Out]  [GitHub logo]  │
+├─────────┬───────┬────────┬─────────┬──────────┬─────────┬──────────────────────  │
+│Portfolio│  Map  │ Access │ Compare │ Activity │ Tickets │ Accounts               │
+└─────────┴───────┴────────┴─────────┴──────────┴─────────┴────────────────────────┘
 ```
 
 ---
@@ -139,10 +139,31 @@ Requires at least 3 loaded facilities for meaningful statistics.
 Cross-facility recent-activity feed. Lazy-loads on first tab visit.
 
 - One row per facility, sorted by most-recently-active
-- Each row: status dot (🟢 <7d, 🟡 7–30d, ⚫ >30d) + last-activity timestamp + stream health chip
-- Stream health chip uses waveform SVG icon (not emoji)
-- Click a row → drill-down panel with twin history + model history + stream health detail
+- Each row: status dot (🟢 <7d, 🟡 7–30d, ⚫ >30d) + last-activity timestamp + stream health chips + open ticket chip
+- Stream health chips: green ok → amber silent → red offline (SVG waveform icon)
+- Ticket chip (orange) appears only when facility has open work orders
+- Stream last-seen timestamps count as activity (not just twin history events)
 - Filters out `metrics_update` system events (not user-triggered)
+- Refresh button to re-scan without page reload
+- Click a row → drill-down panel showing **30-day summary**:
+  - Facility changes + unique contributor count (from cached history, instant)
+  - Stream health (total, online/silent/offline breakdown, instant)
+  - Model changes + contributor count (loads in background)
+  - "Open in Stats" punch-out link to tandem-sample-stats
+
+## Tickets Tab
+
+Portfolio-wide work order summary. Lazy-loads on first tab visit.
+
+- One row per facility with indicator dot (orange = has open tickets, green = none)
+- Open and closed ticket counts shown as chips
+- Sort by: Most Open / Most Critical / Most Total; Refresh button
+- Click a row → drill-down panel:
+  - Priority breakdown pills (Critical / High / Medium / Low / Trivial)
+  - All / Open / Closed filter buttons
+  - Sort by Priority (default) / Date / Name — with sort icon indicator
+  - Fixed-width priority pills so ticket names align in a vertical column
+  - Each ticket: priority pill, name (truncated with tooltip), status, age in days, open date
 
 ---
 
@@ -172,6 +193,7 @@ SVG icons throughout — no emoji.
 | Elements | Horizontal lines |
 | Connections | Node graph |
 | Storage | Cylinder (database) |
+| Tickets | Perforated ticket outline |
 
 ---
 

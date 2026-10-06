@@ -1,7 +1,7 @@
 # Project Overview
 
 > **Status:** Active prototype — iteratively developed with AI assistance  
-> **Last updated:** 2026-10-05
+> **Last updated:** 2026-10-06
 
 ## Purpose
 
@@ -30,7 +30,8 @@ Initially an internal Autodesk prototype; quality is held to production standard
 | Map | ✅ Live | Leaflet map with facility pins; inline location form; unlocated panel |
 | Access | ✅ Live | D3 force-directed bipartite graph — users/apps ↔ facilities |
 | Compare | ✅ Live | Side-by-side facility comparison table (up to 6); portfolio-wide outlier detection (±1.5σ) |
-| Activity | ✅ Live | Cross-facility recent-activity feed; twin + model history; stream health status |
+| Activity | ✅ Live | Cross-facility recent-activity feed; 30-day summary (facility/stream/model changes + contributors); "Open in Stats" punch-out |
+| Tickets  | ✅ Live | Portfolio-wide work order summary; open/closed counts per facility; drill-down with priority breakdown, filter, and sort |
 | Accounts | ✅ Live | Cross-account leaderboard ranked by 7 metrics; 403-forbidden accounts handled gracefully |
 
 ## Key Features
@@ -55,9 +56,21 @@ Initially an internal Autodesk prototype; quality is held to production standard
 - Portfolio outlier panel: scans ALL account facilities and surfaces statistical anomalies as alert cards
 
 ### Activity tab
-- Loads last 30 days of twin history + stream health per facility
+- Loads last 90 days of twin history + stream health per facility (90-day window for sorting; 30-day window for drill-down summary)
 - Filters out system-generated `metrics_update` events
-- Stream health chips use SVG waveform icon (no emoji)
+- Stream health chips: green ok → amber silent → red offline (SVG waveform icon, no emoji)
+- Ticket chip on rows with open work orders (reads from stats cache, no extra API call)
+- Drill-down panel: 30-day summary cards (facility changes + contributors, stream health, model changes), "Open in Stats" punch-out
+- Stream data ingestion counts as activity (last-seen timestamp folded into `lastActivityTs`)
+- Refresh button to re-scan without full page reload
+
+### Tickets tab
+- One row per facility sorted by open ticket count; indicator dot orange/green
+- Sort by: Most Open / Most Critical / Most Total
+- Drill-down panel loads full ticket list on click (lazy, single `/scan` on default model)
+- All / Open / Closed filter buttons + Priority / Date / Name sort with sort icon
+- Fixed-width priority pills so ticket names align vertically
+- Ticket counts (open + closed) fetched in parallel with streams + tagged assets in `loadAllFacilityStats`
 
 ### Accounts tab
 - Fetches `GET /groups/{urn}/metrics` for all accounts in parallel (concurrency-5 pool)

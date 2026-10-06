@@ -23,7 +23,8 @@ using the same Tandem REST API, OAuth PKCE pattern, and visual design language.
 | **Map** | Interactive Leaflet map with facility pins. Set locations for unlocated facilities by address (geocoded via OpenStreetMap) or by clicking the map. |
 | **Access** | D3 force-directed graph showing which users and applications have access to which facilities. |
 | **Compare** | Select up to 6 facilities for a side-by-side metrics table. Outlier cells are automatically highlighted (±1.5σ from the account average). A portfolio-wide outlier panel surfaces any facility that stands out significantly. |
-| **Activity** | Cross-facility activity feed showing recent changes (who changed what, and when) across all facilities. |
+| **Activity** | Cross-facility activity feed. Each facility row shows stream health and open ticket count. Click a row for a 30-day summary (facility changes, contributors, stream health, model changes) with an "Open in Stats" punch-out. |
+| **Tickets** | Portfolio-wide work order summary. Ranks facilities by open ticket count. Click to drill down into per-ticket details with priority filters and sort controls. |
 | **Accounts** | Cross-account leaderboard ranked by 7 metrics: Facilities, Models, Streams, Assets, Connections, Elements, and Storage. |
 
 **"Open in Stats" punch-out:** clicking this on any facility card opens
@@ -89,7 +90,8 @@ tandem-sample-portfolio/
 │       ├── mapView.js         # Leaflet map + location form
 │       ├── accessView.js      # D3 bipartite graph
 │       ├── compareView.js     # Side-by-side comparison + outliers
-│       ├── activityView.js    # Cross-facility activity feed
+│       ├── activityView.js    # Cross-facility activity feed + 30-day summary drill-down
+│       ├── ticketsView.js     # Portfolio-wide work order / ticket summary
 │       └── accountsView.js    # Cross-account leaderboard
 ├── tandem/
 │   ├── constants.js        # Tandem column families, names, element flags
