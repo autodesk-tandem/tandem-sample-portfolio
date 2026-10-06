@@ -162,6 +162,10 @@
                         class="tab-btn px-4 py-2.5 text-sm font-medium text-dark-text-secondary hover:text-dark-text transition border-b-2 border-transparent">
                     Tickets
                 </button>
+                <button data-tab="chat"
+                        class="tab-btn px-4 py-2.5 text-sm font-medium text-dark-text-secondary hover:text-dark-text transition border-b-2 border-transparent">
+                    AI Chat
+                </button>
                 <button data-tab="accounts"
                         class="tab-btn px-4 py-2.5 text-sm font-medium text-dark-text-secondary hover:text-dark-text transition border-b-2 border-transparent">
                     Accounts
@@ -256,6 +260,12 @@
         <div id="view-tickets" class="hidden">
             <!-- Rendered by ticketsView.js -->
             <div id="ticketsContent"></div>
+        </div>
+
+        <!-- AI Chat View -->
+        <div id="view-chat" class="hidden">
+            <!-- Rendered by chatView.js -->
+            <div id="chatContent"></div>
         </div>
 
         <!-- Accounts View -->
