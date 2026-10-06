@@ -513,11 +513,11 @@ function renderLeaderboard() {
                             </div>
                             <div class="flex items-center gap-3 shrink-0 opacity-0 group-hover:opacity-100 transition">
                                 <button data-view-details="${escapeHtml(row.urn)}"
-                                        class="inline-flex items-center gap-1 text-xs text-dark-text-secondary hover:text-tandem-blue transition">
+                                        class="inline-flex items-center gap-1 text-xs text-tandem-blue hover:underline transition">
                                     Stats ${extIcon}
                                 </button>
                                 <a href="${tandemFacilityURL(row.urn)}" target="_blank" rel="noopener"
-                                   class="inline-flex items-center gap-1 text-xs text-dark-text-secondary hover:text-tandem-blue transition">
+                                   class="inline-flex items-center gap-1 text-xs text-tandem-blue hover:underline transition">
                                     Tandem ${extIcon}
                                 </a>
                             </div>
@@ -554,11 +554,11 @@ function renderLeaderboard() {
                             </div>
                             <div class="flex items-center gap-3 shrink-0 opacity-0 group-hover:opacity-100 transition pl-2">
                                 <button data-view-details="${escapeHtml(row.urn)}"
-                                        class="inline-flex items-center gap-1 text-xs text-dark-text-secondary hover:text-tandem-blue transition">
+                                        class="inline-flex items-center gap-1 text-xs text-tandem-blue hover:underline transition">
                                     Stats ${extIcon}
                                 </button>
                                 <a href="${tandemFacilityURL(row.urn)}" target="_blank" rel="noopener"
-                                   class="inline-flex items-center gap-1 text-xs text-dark-text-secondary hover:text-tandem-blue transition">
+                                   class="inline-flex items-center gap-1 text-xs text-tandem-blue hover:underline transition">
                                     Tandem ${extIcon}
                                 </a>
                             </div>
@@ -649,7 +649,7 @@ function createSkeletonCard(facility) {
             <!-- Footer: Open in Stats + Open in Tandem -->
             <div class="pt-2 border-t border-dark-border flex items-center justify-between">
                 <button data-view-details="${escapeHtml(facility.urn)}"
-                        class="inline-flex items-center gap-1 text-xs text-dark-text-secondary hover:text-tandem-blue transition">
+                        class="inline-flex items-center gap-1 text-xs text-tandem-blue hover:underline transition">
                     Open in Stats
                     <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -658,7 +658,7 @@ function createSkeletonCard(facility) {
                 </button>
                 <a href="${tandemFacilityURL(facility.urn)}"
                    target="_blank" rel="noopener"
-                   class="inline-flex items-center gap-1 text-xs text-dark-text-secondary hover:text-tandem-blue transition">
+                   class="inline-flex items-center gap-1 text-xs text-tandem-blue hover:underline transition">
                     Open in Tandem
                     <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"

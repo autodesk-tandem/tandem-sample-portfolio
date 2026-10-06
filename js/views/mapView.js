@@ -129,9 +129,6 @@ function buildPopup(facility) {
     const thumb    = summary?.thumbnailURL
         ? `<img src="${summary.thumbnailURL}" style="width:100%;height:100px;object-fit:cover;border-radius:4px;margin-bottom:8px;"/>`
         : '';
-    const models   = summary
-        ? `<p style="font-size:12px;color:#a0a0a0;margin:0 0 8px;">Models: ${summary.modelCount}</p>`
-        : '';
     const tandemUrl = tandemFacilityURL(facility.urn);
     const safeUrn   = encodeURIComponent(facility.urn);
 
@@ -139,39 +136,60 @@ function buildPopup(facility) {
     const googleUrl = loc ? `https://www.google.com/maps?q=${loc.lat},${loc.lng}` : null;
     const appleUrl  = loc ? `https://maps.apple.com/?ll=${loc.lat},${loc.lng}&q=${encodeURIComponent(facility.name)}` : null;
 
-    const externalLinks = (googleUrl && appleUrl) ? `
-        <div style="display:flex;gap:10px;margin:6px 0 2px;">
-            <a href="${googleUrl}" target="_blank" rel="noopener"
-               style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:#a0a0a0;text-decoration:none;">
-                <img src="https://maps.google.com/favicon.ico"
-                     width="13" height="13" style="border-radius:2px;vertical-align:middle;" alt="Google Maps">
-                Google Maps ↗
-            </a>
-            <a href="${appleUrl}" target="_blank" rel="noopener"
-               style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:#a0a0a0;text-decoration:none;">
-                <img src="https://maps.apple.com/favicon.ico"
-                     width="13" height="13" style="border-radius:2px;vertical-align:middle;" alt="Apple Maps">
-                Apple Maps ↗
-            </a>
-        </div>` : '';
+    // Reusable external-link SVG (matches the card footer icon)
+    const extIcon = `<svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2"
+        stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+        <path d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+    </svg>`;
+
+    const linkStyle = 'display:inline-flex;align-items:center;gap:4px;font-size:12px;color:#3b82f6;text-decoration:none;';
+    const hoverAttrs = `onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'"`;
 
     const div = document.createElement('div');
-    div.style.cssText = 'background:#2a2a2a;color:#e0e0e0;border-radius:6px;padding:10px;min-width:220px;';
+    div.style.cssText = 'background:#2a2a2a;color:#e0e0e0;border-radius:6px;padding:12px;min-width:230px;';
+    // Prefer the address label saved when the user placed the pin (geocoded or typed);
+    // fall back to the Identity Data address from Tandem metadata.
+    const addressText = loc?.label ?? summary?.address ?? null;
+    const address = addressText
+        ? `<p style="font-size:11px;color:#a0a0a0;margin:2px 0 0;">${escapeHtml(addressText)}</p>`
+        : '';
+
     div.innerHTML = `
         ${thumb}
-        <p style="font-size:13px;font-weight:600;margin:0 0 4px;">${escapeHtml(facility.name)}</p>
-        ${models}
-        ${externalLinks}
+        <p style="font-size:13px;font-weight:600;margin:0 0 1px;">${escapeHtml(facility.name)}</p>
+        ${address}
+
         <hr style="border:none;border-top:1px solid #404040;margin:8px 0;"/>
-        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
-            <a href="${tandemUrl}" target="_blank" rel="noopener"
-               style="font-size:12px;color:#0696D7;text-decoration:none;">Open in Tandem ↗</a>
+
+        <!-- External links — all use the same style and icon -->
+        <div style="display:flex;flex-direction:column;gap:6px;">
+            <a href="${tandemUrl}" target="_blank" rel="noopener" style="${linkStyle}" ${hoverAttrs}>
+                <img src="https://tandem.autodesk.com/favicon.ico" width="13" height="13"
+                     style="border-radius:2px;" alt="">
+                Open in Tandem ${extIcon}
+            </a>
+            ${googleUrl ? `<a href="${googleUrl}" target="_blank" rel="noopener" style="${linkStyle}" ${hoverAttrs}>
+                <img src="https://maps.google.com/favicon.ico" width="13" height="13"
+                     style="border-radius:2px;" alt="">
+                Google Maps ${extIcon}
+            </a>` : ''}
+            ${appleUrl ? `<a href="${appleUrl}" target="_blank" rel="noopener" style="${linkStyle}" ${hoverAttrs}>
+                <img src="https://maps.apple.com/favicon.ico" width="13" height="13"
+                     style="border-radius:2px;" alt="">
+                Apple Maps ${extIcon}
+            </a>` : ''}
+        </div>
+
+        <hr style="border:none;border-top:1px solid #404040;margin:8px 0;"/>
+
+        <!-- Pin management actions -->
+        <div style="display:flex;justify-content:space-between;align-items:center;">
             <button onclick="window._mapView.changePin('${safeUrn}')"
                     style="font-size:11px;color:#a0a0a0;background:none;border:none;cursor:pointer;padding:0;">
                 Change location
             </button>
             <button onclick="window._mapView.removePin('${safeUrn}')"
-                    style="font-size:11px;color:#a0a0a0;background:none;border:none;cursor:pointer;padding:0;margin-left:auto;">
+                    style="font-size:11px;color:#a0a0a0;background:none;border:none;cursor:pointer;padding:0;">
                 Remove pin
             </button>
         </div>`;
@@ -449,6 +467,8 @@ async function geocodeAddress(urn) {
             .addTo(map)
             .bindPopup(`<div style="font-size:12px;color:#1a1a1a;max-width:240px;">${escapeHtml(display_name)}</div>`)
             .openPopup();
+        // Stash the human-readable address so confirmLocation can save it
+        previewMarker._addressLabel = display_name;
 
         map.setView([numLat, numLng], 15);
         setGeocodeStatus(`Found: ${display_name.split(',').slice(0, 3).join(',')}${note}`);
@@ -474,7 +494,12 @@ function setGeocodeStatus(msg, isError = false) {
 // ── Location confirm / cancel ─────────────────────────────────────────────────
 
 function confirmLocation(urn, lat, lng) {
-    setLocation(urn, lat, lng);
+    // Use the geocoded display_name if available; otherwise fall back to whatever
+    // the user typed in the address input (useful for map-click confirmations).
+    const label = previewMarker?._addressLabel
+        ?? document.getElementById('addrInput')?.value?.trim()
+        ?? null;
+    setLocation(urn, lat, lng, label || undefined);
     cancelPlacing();
 
     const facility = allFacilities.find(f => f.urn === urn);

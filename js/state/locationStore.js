@@ -36,10 +36,11 @@ export function getLocation(facilityURN) {
  * @param {string} facilityURN
  * @param {number} lat
  * @param {number} lng
+ * @param {string} [label] - Human-readable address label (from geocoder or user input)
  */
-export function setLocation(facilityURN, lat, lng) {
+export function setLocation(facilityURN, lat, lng, label) {
     const data = load();
-    data[facilityURN] = { lat, lng };
+    data[facilityURN] = { lat, lng, ...(label ? { label } : {}) };
     save(data);
 }
 
