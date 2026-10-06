@@ -53,6 +53,8 @@ let _abortFlag     = false;
 let _results       = [];           // FacilitySummary[] — one per facility
 let _sortKey       = 'activity';   // 'activity' | 'offline'
 let _openFacility  = null;         // URN of the currently-open drill-down panel
+let _onOpenStats   = null;         // callback(urn) → opens facility in tandem-sample-stats
+export function setOpenStatsCallback(fn) { _onOpenStats = fn; }
 
 // ── Public API ─────────────────────────────────────────────────────────────────
 
@@ -133,7 +135,6 @@ async function loadFacilitySummary(facility, region) {
     const latestEntry   = sortedHistory[0] ?? null;
     const lastActivityTs = latestEntry?.[HC.Timestamp] ?? null;
     const lastActivityOp = latestEntry?.[HC.Operation]  ?? null;
-    const lastActivityActor = latestEntry?.[HC.Username] ?? latestEntry?.clientId ?? null;
 
     // ── Stream health ──────────────────────────────────────────────────────────
     let streamHealth = { total: 0, online: 0, warning: 0, offline: 0, details: [] };
@@ -191,23 +192,20 @@ async function loadFacilitySummary(facility, region) {
         (max, s) => (s.lastTs && s.lastTs > max ? s.lastTs : max), 0
     ) || null;
 
-    let effectiveActivityTs   = lastActivityTs;
-    let effectiveActivityOp   = lastActivityOp;
-    let effectiveActivityActor = lastActivityActor;
+    let effectiveActivityTs = lastActivityTs;
+    let effectiveActivityOp = lastActivityOp;
 
     if (latestStreamTs && (!effectiveActivityTs || latestStreamTs > effectiveActivityTs)) {
-        effectiveActivityTs    = latestStreamTs;
-        effectiveActivityOp    = 'stream_data';
-        effectiveActivityActor = null;   // no actor for automated data ingestion
+        effectiveActivityTs = latestStreamTs;
+        effectiveActivityOp = 'stream_data';
     }
 
     return {
         urn:    facility.urn,
         name:   facility.name,
         region,
-        lastActivityTs:    effectiveActivityTs,
-        lastActivityOp:    effectiveActivityOp,
-        lastActivityActor: effectiveActivityActor,
+        lastActivityTs: effectiveActivityTs,
+        lastActivityOp: effectiveActivityOp,
         historyEntries: sortedHistory,
         streamHealth,
     };
@@ -457,7 +455,14 @@ function buildTicketChip(stats) {
 
 // ── Drill-down panel ───────────────────────────────────────────────────────────
 
-function openDrillDown(result) {
+const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+
+const EXT_ICON = `<svg class="w-3 h-3 inline-block" fill="none" stroke="currentColor" stroke-width="2"
+    stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+    <path d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+</svg>`;
+
+async function openDrillDown(result) {
     _openFacility = result.urn;
     const panel = document.getElementById('activity-panel');
     if (!panel) return;
@@ -467,6 +472,36 @@ function openDrillDown(result) {
         el.classList.toggle('bg-dark-bg', el.dataset.detailsUrn === result.urn);
     });
 
+    // ── Compute 30-day summary from already-loaded data ─────────────────────
+    const cutoff30    = Date.now() - THIRTY_DAYS_MS;
+    const recent      = result.historyEntries.filter(e => (e[HC.Timestamp] ?? 0) >= cutoff30);
+    const uniqueUsers = new Set(recent.map(e => e[HC.Username]).filter(Boolean));
+    const facilityChanges = recent.length;
+
+    // Stream summary
+    const sh = result.streamHealth;
+    const streamOnline  = sh.details.filter(s => s.status === 'online').length;
+    const streamWarning = sh.details.filter(s => s.status === 'warning').length;
+    const streamOffline = sh.details.filter(s => s.status === 'offline').length;
+
+    function statCard(icon, label, main, sub) {
+        return `
+            <div class="rounded border border-dark-border bg-dark-bg p-3 space-y-1">
+                <p class="text-xs text-dark-text-secondary flex items-center gap-1.5">${icon} ${label}</p>
+                <p class="text-sm font-semibold text-dark-text">${main}</p>
+                ${sub ? `<p class="text-xs text-dark-text-secondary">${sub}</p>` : ''}
+            </div>`;
+    }
+
+    // Stream status text
+    const streamStatusParts = [];
+    if (streamOnline)  streamStatusParts.push(`<span style="color:#34d399">${streamOnline} active</span>`);
+    if (streamWarning) streamStatusParts.push(`<span style="color:#fbbf24">${streamWarning} silent</span>`);
+    if (streamOffline) streamStatusParts.push(`<span style="color:#f87171">${streamOffline} offline</span>`);
+    const streamStatus = sh.total === 0
+        ? 'No streams'
+        : streamStatusParts.join(' · ') || 'No recent data';
+
     panel.innerHTML = `
         <div class="p-4 space-y-4">
             <!-- Header -->
@@ -475,131 +510,92 @@ function openDrillDown(result) {
                 <p class="text-xs text-dark-text-secondary">${result.region.toUpperCase()}</p>
             </div>
 
-            <!-- Twin history section -->
+            <!-- 30-day summary cards -->
             <div>
-                <p class="text-xs font-semibold text-dark-text uppercase tracking-wide mb-2">Facility History</p>
-                ${buildHistoryList(result.historyEntries)}
+                <p class="text-xs font-semibold text-dark-text uppercase tracking-wide mb-2">Last 30 Days</p>
+                <div class="grid grid-cols-2 gap-2">
+                    ${statCard(
+                        `<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-2 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg>`,
+                        'Facility',
+                        `${facilityChanges} change${facilityChanges !== 1 ? 's' : ''}`,
+                        uniqueUsers.size > 0 ? `${uniqueUsers.size} contributor${uniqueUsers.size !== 1 ? 's' : ''}` : 'No contributors'
+                    )}
+                    ${statCard(
+                        ICON_STREAMS,
+                        'Streams',
+                        `${sh.total} total`,
+                        sh.total > 0 ? streamStatus : null
+                    )}
+                    <div id="model-summary-card" class="rounded border border-dark-border bg-dark-bg p-3 space-y-1 col-span-2">
+                        <p class="text-xs text-dark-text-secondary flex items-center gap-1.5">
+                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
+                            Models
+                        </p>
+                        <p class="text-xs text-dark-text-secondary animate-pulse">Loading…</p>
+                    </div>
+                </div>
             </div>
 
-            <!-- Stream health section -->
-            ${result.streamHealth.total > 0 ? `
-            <div>
-                <p class="text-xs font-semibold text-dark-text uppercase tracking-wide mb-2">
-                    Stream Health
-                    <span class="ml-1 font-normal text-dark-text-secondary normal-case tracking-normal">(${result.streamHealth.total} total)</span>
-                </p>
-                ${buildStreamList(result.streamHealth.details)}
-            </div>` : ''}
-
-            <!-- Model history section (load on demand) -->
-            <div>
-                <p class="text-xs font-semibold text-dark-text uppercase tracking-wide mb-2">Model History</p>
-                <div id="model-history-content">
-                    <button id="load-model-history-btn"
-                            class="text-xs text-tandem-blue hover:underline"
-                            data-urn="${esc(result.urn)}" data-region="${esc(result.region)}">
-                        Load model history…
-                    </button>
-                </div>
+            <!-- Punch-out -->
+            <div class="border-t border-dark-border pt-3">
+                <p class="text-xs text-dark-text-secondary mb-2">For full history and details:</p>
+                <button id="activity-open-stats-btn"
+                        class="inline-flex items-center gap-1.5 text-xs text-tandem-blue hover:underline font-medium">
+                    Open in Stats ${EXT_ICON}
+                </button>
             </div>
         </div>`;
 
-    // Wire load-model-history button
-    document.getElementById('load-model-history-btn')?.addEventListener('click', async (e) => {
-        const btn = e.currentTarget;
-        btn.textContent = 'Loading…';
-        btn.disabled    = true;
-        await loadAndRenderModelHistory(result.urn, result.region);
-    });
-}
-
-function buildHistoryList(entries) {
-    if (!entries.length) {
-        return `<p class="text-xs text-dark-text-secondary italic">No history in the last 90 days</p>`;
-    }
-    const items = entries.slice(0, 20).map(e => {
-        const ts    = e[HC.Timestamp];
-        const op    = e[HC.Operation]  ?? '—';
-        const actor = e[HC.Username]   ?? 'unknown';
-        return `
-            <div class="flex items-start gap-2 py-1.5 border-b border-dark-border last:border-0">
-                <span class="text-xs font-mono rounded px-1 shrink-0 mt-0.5"
-                      style="${opBadgeStyle(op)}">${formatOp(op)}</span>
-                <div class="min-w-0 flex-1">
-                    <p class="text-xs text-dark-text truncate">${esc(actor)}</p>
-                    <p class="text-xs text-dark-text-secondary">${ts ? timeAgo(ts) : '—'}</p>
-                </div>
-            </div>`;
-    }).join('');
-
-    const more = entries.length > 20
-        ? `<p class="text-xs text-dark-text-secondary opacity-60 pt-1">+ ${entries.length - 20} older entries</p>` : '';
-
-    return `<div class="space-y-0">${items}${more}</div>`;
-}
-
-function buildStreamList(streams) {
-    if (!streams.length) return '';
-    const sorted = [...streams].sort((a, b) => {
-        const order = { offline: 0, warning: 1, online: 2 };
-        return (order[a.status] ?? 3) - (order[b.status] ?? 3);
+    // Punch-out button
+    panel.querySelector('#activity-open-stats-btn')?.addEventListener('click', () => {
+        if (_onOpenStats) _onOpenStats(result.urn);
     });
 
-    return `<div class="space-y-0 max-h-60 overflow-y-auto">
-        ${sorted.map(s => {
-            const color  = s.status === 'offline' ? '#f87171'
-                         : s.status === 'warning'  ? '#fbbf24' : '#34d399';
-            const label  = s.status === 'online'
-                ? `Last: ${s.lastTs ? timeAgo(s.lastTs) : 'unknown'}`
-                : s.status === 'warning' ? `Silent ${s.lastTs ? timeAgo(s.lastTs) : ''}` : `Offline${s.lastTs ? ' · last ' + timeAgo(s.lastTs) : ''}`;
-            return `
-                <div class="flex items-center gap-2 py-1.5 border-b border-dark-border last:border-0">
-                    <div class="w-2 h-2 rounded-full shrink-0" style="background:${color}"></div>
-                    <span class="text-xs text-dark-text flex-1 truncate">${esc(s.name)}</span>
-                    <span class="text-xs shrink-0" style="color:${color}">${label}</span>
-                </div>`;
-        }).join('')}
-    </div>`;
+    // Load model summary in background
+    loadModelSummary(result.urn, result.region);
 }
 
-async function loadAndRenderModelHistory(facilityURN, region) {
-    const container = document.getElementById('model-history-content');
-    if (!container) return;
+async function loadModelSummary(facilityURN, region) {
+    const card = document.getElementById('model-summary-card');
+    if (!card) return;
+
+    const IGNORED_OPS = new Set(['metrics_update']);
+    const cutoff30    = Date.now() - THIRTY_DAYS_MS;
 
     try {
         const models = await getModels(facilityURN, region);
         if (!models?.length) {
-            container.innerHTML = `<p class="text-xs text-dark-text-secondary italic">No models found</p>`;
+            card.querySelector('p:last-child').textContent = 'No models';
             return;
         }
 
-        const minTs = Date.now() - HISTORY_LOOKBACK_MS;
-        const IGNORED_OPS = new Set(['metrics_update']);
         const modelHistories = await Promise.all(
             models.map(async m => {
-                const h = await getHistory(m.modelId, region, { min: minTs, max: Date.now(), includeChanges: true, limit: 30 }).catch(() => []);
-                const filtered = h.filter(e => !IGNORED_OPS.has(e[HC.Operation]));
-                return { name: m.label || 'Untitled', entries: filtered };
+                const h = await getHistory(m.modelId, region, {
+                    min: cutoff30, max: Date.now(), includeChanges: true, limit: 200
+                }).catch(() => []);
+                return h.filter(e => !IGNORED_OPS.has(e[HC.Operation]));
             })
         );
 
-        const withHistory = modelHistories.filter(m => m.entries.length > 0);
-        if (!withHistory.length) {
-            container.innerHTML = `<p class="text-xs text-dark-text-secondary italic">No model changes in the last 90 days</p>`;
-            return;
-        }
+        const totalChanges  = modelHistories.reduce((s, h) => s + h.length, 0);
+        const modelsChanged = modelHistories.filter(h => h.length > 0).length;
+        const allEntries    = modelHistories.flat();
+        const uniqueUsers   = new Set(allEntries.map(e => e[HC.Username]).filter(Boolean));
 
-        container.innerHTML = withHistory.map(m => `
-            <details class="mb-2">
-                <summary class="text-xs font-medium text-dark-text cursor-pointer hover:text-tandem-blue">
-                    ${esc(m.name)} <span class="font-normal text-dark-text-secondary">(${m.entries.length} changes)</span>
-                </summary>
-                <div class="ml-2 mt-1">${buildHistoryList(m.entries)}</div>
-            </details>`
-        ).join('');
+        if (!card) return; // panel may have closed
+        card.innerHTML = `
+            <p class="text-xs text-dark-text-secondary flex items-center gap-1.5">
+                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
+                Models
+            </p>
+            <p class="text-sm font-semibold text-dark-text">${totalChanges} change${totalChanges !== 1 ? 's' : ''}</p>
+            <p class="text-xs text-dark-text-secondary">
+                ${modelsChanged} of ${models.length} model${models.length !== 1 ? 's' : ''} updated
+                ${uniqueUsers.size > 0 ? `· ${uniqueUsers.size} contributor${uniqueUsers.size !== 1 ? 's' : ''}` : ''}
+            </p>`;
     } catch (err) {
-        container.innerHTML = `<p class="text-xs text-red-400">Error loading model history</p>`;
-        console.error('Error loading model history:', err);
+        if (card) card.querySelector('p:last-child').textContent = 'Could not load';
     }
 }
 
@@ -634,14 +630,6 @@ function formatOp(op) {
     return map[op] ?? op;
 }
 
-function opBadgeStyle(op) {
-    if (op.includes('user'))    return 'background:#0696D722;color:#60a5fa;border:1px solid #0696D744';
-    if (op === 'mutate')        return 'background:#10B98122;color:#34d399;border:1px solid #10B98144';
-    if (op === 'import')        return 'background:#8B5CF622;color:#c084fc;border:1px solid #8B5CF644';
-    if (op === 'delete')        return 'background:#ef444422;color:#f87171;border:1px solid #ef444444';
-    if (op === 'stream_data')   return 'background:#0696D722;color:#38bdf8;border:1px solid #0696D744';
-    return 'background:#37415122;color:#9ca3af;border:1px solid #37415144';
-}
 
 function esc(str) {
     return String(str ?? '')

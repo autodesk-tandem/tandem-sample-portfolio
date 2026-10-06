@@ -1,7 +1,7 @@
 # Architecture Spec
 
-> **Status:** Implemented — reflects built state as of 2026-10-05  
-> **Last updated:** 2026-10-05  
+> **Status:** Implemented — reflects built state as of 2026-10-06  
+> **Last updated:** 2026-10-06  
 > **Role:** Architect
 
 ---
@@ -49,7 +49,8 @@ tandem-sample-portfolio/
 │       ├── mapView.js         # Leaflet map; inline location form
 │       ├── accessView.js      # D3 force-directed bipartite graph
 │       ├── compareView.js     # Side-by-side table + outlier detection
-│       ├── activityView.js    # Cross-facility activity feed + stream health
+│       ├── activityView.js    # Cross-facility activity feed + 30-day summary drill-down
+│       ├── ticketsView.js     # Portfolio-wide work order / ticket summary
 │       └── accountsView.js    # Cross-account leaderboard
 ├── tandem/
 │   ├── constants.js        # Column families, names, element flags, QC (inherited)
@@ -87,10 +88,11 @@ This scales to large portfolios (1000+ facilities) without per-region round-trip
 ## Data Loading Strategy
 
 ### Parallel pipelines per facility
-Each facility triggers two concurrent fetch pipelines in `loadAllFacilityStats()`:
+Each facility triggers concurrent fetch pipelines in `loadAllFacilityStats()`:
 
 ```
-getFacilityStats(urn)      → { streamCount, taggedAssetCount }
+getFacilityStats(urn)      → { streamCount, taggedAssetCount, openTicketCount, closedTicketCount }
+                              (internally: getStreams + getTaggedAssetsCount + getTickets in parallel)
 getInlineTemplate(urn)     → { name }   (GET /twins/{urn}/template)
 ```
 
@@ -111,6 +113,10 @@ async function worker() {
 await Promise.all(Array.from({ length: 5 }, () => worker()));
 ```
 Used in: `loadAllFacilityStats`, `accessView`, `activityView`, `accountsView`.
+
+### Timeout protection
+Each facility's stats load races against a 30-second timeout (`Promise.race`). If a hung fetch
+never resolves, the worker slot is released and the card shows "Timed out" with a Retry button.
 
 ### Pagination
 50 cards rendered initially; "Load more" button appends the next 50. Leaderboard renders all
@@ -135,7 +141,7 @@ filtered facilities (no pagination — rows are lighter than cards).
 | `POST /twins/{urn}/history` | Recent activity (twin history) |
 | `POST /modeldata/{urn}/history` | Model change history |
 | `GET /groups/{urn}/metrics` | Account-level usage totals |
-| `GET /timeseries/models/{urn}/streams:batch-lastseen` | Stream last-seen values |
+| `POST /timeseries/models/{urn}/streams` | Stream last-seen values (batch) |
 
 ---
 
