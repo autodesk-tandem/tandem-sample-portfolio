@@ -34,6 +34,7 @@ import { render as renderMap, invalidateMapSize } from './views/mapView.js';
 import { render as renderComparison, updateStats as updateCompareStats } from './views/compareView.js';
 import * as accessView    from './views/accessView.js';
 import * as activityView  from './views/activityView.js';
+import * as ticketsView   from './views/ticketsView.js';
 import * as accountsView  from './views/accountsView.js';
 
 // ── DOM refs ──────────────────────────────────────────────────────────────────
@@ -234,6 +235,7 @@ async function switchAccount(accountName) {
     renderComparison(facilities, facilityRegionMap);
     accessView.render(facilities, facilityRegionMap);
     activityView.render(facilities, facilityRegionMap);
+    ticketsView.render(facilities, facilityRegionMap);
     accountsView.render(accounts);
 
     // Always land on Portfolio when switching accounts — ensures every lazy
@@ -340,6 +342,7 @@ async function loadAllFacilityStats(facilities, accountAtStart) {
                 });
                 updateCardStats(f.urn, stats);
                 updateCompareStats(f.urn, stats);
+                ticketsView.updateStats();
             } catch (err) {
                 const isTimeout = err?.message === 'timeout';
                 console.warn(`Stats load ${isTimeout ? 'timed out' : 'failed'} for ${f.name}:`, err);
@@ -355,7 +358,7 @@ async function loadAllFacilityStats(facilities, accountAtStart) {
 
 // ── Tab switching ─────────────────────────────────────────────────────────────
 
-const TABS = ['portfolio', 'map', 'access', 'compare', 'activity', 'accounts'];
+const TABS = ['portfolio', 'map', 'access', 'compare', 'activity', 'tickets', 'accounts'];
 
 function switchTab(tabId) {
     currentTab = tabId;
@@ -375,6 +378,7 @@ function switchTab(tabId) {
     // Access graph loads lazily on first visit
     if (tabId === 'access')   accessView.activate();
     if (tabId === 'activity') activityView.activate();
+    if (tabId === 'tickets')  ticketsView.activate();
     if (tabId === 'accounts') accountsView.activate();
 }
 
