@@ -153,11 +153,25 @@ async function loadFacilitySummary(facility, region) {
         streamHealth.total = streams.length;
 
         for (const stream of streams) {
-            const key    = stream[QC.Key];
-            const name   = stream[QC.OName]?.[0] ?? stream[QC.Name]?.[0] ?? 'Unnamed Stream';
-            const entry  = shortKeyMap[key];
-            const lastTs = entry?.t ?? null;        // timestamp in ms
-            const age    = lastTs ? now - lastTs : Infinity;
+            const key   = stream[QC.Key];
+            const name  = stream[QC.OName]?.[0] ?? stream[QC.Name]?.[0] ?? 'Unnamed Stream';
+            const entry = shortKeyMap[key];
+
+            // Response shape: { "z:AA": { "timestampMs": value, ... }, ... }
+            // Timestamp is a key in the inner object, not a `.t` field.
+            let lastTs = null;
+            if (entry) {
+                for (const propValues of Object.values(entry)) {
+                    if (propValues && typeof propValues === 'object') {
+                        for (const ts of Object.keys(propValues)) {
+                            const t = parseInt(ts, 10);
+                            if (!isNaN(t) && (!lastTs || t > lastTs)) lastTs = t;
+                        }
+                    }
+                }
+            }
+
+            const age = lastTs ? now - lastTs : Infinity;
 
             let status;
             if (age < ONLINE_MS)       status = 'online';
@@ -169,13 +183,30 @@ async function loadFacilitySummary(facility, region) {
         }
     }
 
+    // If the most recent stream data ingestion is newer than the latest history
+    // entry, use it as the activity timestamp (timeseries writes don't create
+    // history entries, so they'd otherwise make the facility look stale).
+    const latestStreamTs = streamHealth.details.reduce(
+        (max, s) => (s.lastTs && s.lastTs > max ? s.lastTs : max), 0
+    ) || null;
+
+    let effectiveActivityTs   = lastActivityTs;
+    let effectiveActivityOp   = lastActivityOp;
+    let effectiveActivityActor = lastActivityActor;
+
+    if (latestStreamTs && (!effectiveActivityTs || latestStreamTs > effectiveActivityTs)) {
+        effectiveActivityTs    = latestStreamTs;
+        effectiveActivityOp    = 'stream_data';
+        effectiveActivityActor = null;   // no actor for automated data ingestion
+    }
+
     return {
         urn:    facility.urn,
         name:   facility.name,
         region,
-        lastActivityTs,
-        lastActivityOp,
-        lastActivityActor,
+        lastActivityTs:    effectiveActivityTs,
+        lastActivityOp:    effectiveActivityOp,
+        lastActivityActor: effectiveActivityActor,
         historyEntries: sortedHistory,
         streamHealth,
     };
@@ -251,13 +282,22 @@ function renderSummary(wrap) {
                     ${offlineTotal ? `<span class="text-red-400">⚠ <b>${offlineTotal}</b> stream${offlineTotal !== 1 ? 's' : ''} offline</span>` : ''}
                     ${warningTotal ? `<span class="text-amber-400">⚠ <b>${warningTotal}</b> stream${warningTotal !== 1 ? 's' : ''} silent 1–7 days</span>` : ''}
 
-                    <!-- Sort controls (right-aligned) -->
-                    <div class="ml-auto flex items-center gap-1">
+                    <!-- Sort controls + Refresh (right-aligned) -->
+                    <div class="ml-auto flex items-center gap-2">
                         <span class="opacity-60">Sort:</span>
                         <button class="sort-btn px-2 py-0.5 rounded text-xs border ${_sortKey === 'activity' ? 'border-tandem-blue text-tandem-blue' : 'border-dark-border text-dark-text-secondary hover:border-dark-text'}"
                                 data-sort="activity">Most Recent</button>
                         <button class="sort-btn px-2 py-0.5 rounded text-xs border ${_sortKey === 'offline' ? 'border-red-400 text-red-400' : 'border-dark-border text-dark-text-secondary hover:border-dark-text'}"
                                 data-sort="offline">Most Offline</button>
+                        <button id="activity-refresh-btn"
+                                class="ml-1 px-2 py-0.5 rounded text-xs border border-dark-border text-dark-text-secondary hover:border-tandem-blue hover:text-tandem-blue transition flex items-center gap-1"
+                                title="Re-scan all facilities">
+                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                      d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                            </svg>
+                            Refresh
+                        </button>
                     </div>
                 </div>
 
@@ -286,6 +326,17 @@ function renderSummary(wrap) {
             _sortKey = btn.dataset.sort;
             renderSummary(wrap);
         });
+    });
+
+    document.getElementById('activity-refresh-btn')?.addEventListener('click', () => {
+        _loaded   = false;
+        _loading  = false;
+        _abortFlag = true;
+        _results  = [];
+        _openFacility = null;
+        showProgress(wrap, 0, _facilities.length);
+        // Small delay to let in-flight workers see the abort flag
+        setTimeout(() => { _abortFlag = false; startLoading(); }, 50);
     });
 
     wrap.querySelectorAll('[data-details-urn]').forEach(btn => {
@@ -560,15 +611,17 @@ function formatOp(op) {
         'mutate':          'Properties changed',
         'update_settings': 'Settings updated',
         'update_template': 'Template updated',
+        'stream_data':     'Stream data received',
     };
     return map[op] ?? op;
 }
 
 function opBadgeStyle(op) {
-    if (op.includes('user'))   return 'background:#0696D722;color:#60a5fa;border:1px solid #0696D744';
-    if (op === 'mutate')       return 'background:#10B98122;color:#34d399;border:1px solid #10B98144';
-    if (op === 'import')       return 'background:#8B5CF622;color:#c084fc;border:1px solid #8B5CF644';
-    if (op === 'delete')       return 'background:#ef444422;color:#f87171;border:1px solid #ef444444';
+    if (op.includes('user'))    return 'background:#0696D722;color:#60a5fa;border:1px solid #0696D744';
+    if (op === 'mutate')        return 'background:#10B98122;color:#34d399;border:1px solid #10B98144';
+    if (op === 'import')        return 'background:#8B5CF622;color:#c084fc;border:1px solid #8B5CF644';
+    if (op === 'delete')        return 'background:#ef444422;color:#f87171;border:1px solid #ef444444';
+    if (op === 'stream_data')   return 'background:#0696D722;color:#38bdf8;border:1px solid #0696D744';
     return 'background:#37415122;color:#9ca3af;border:1px solid #37415144';
 }
 
