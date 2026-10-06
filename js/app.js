@@ -235,6 +235,10 @@ async function switchAccount(accountName) {
     activityView.render(facilities, facilityRegionMap);
     accountsView.render(accounts);
 
+    // Always land on Portfolio when switching accounts — ensures every lazy
+    // tab starts fresh and won't show stale data from the previous account.
+    switchTab('portfolio');
+
     // Load account-level metrics banner (fire-and-forget; clears banner on switch)
     renderAccountBanner(null, accountName); // clear stale banner immediately
     if (account.id !== '@me') {
@@ -242,9 +246,6 @@ async function switchAccount(accountName) {
             .then(m => renderAccountBanner(m, accountName))
             .catch(() => renderAccountBanner(null, accountName));
     }
-
-    // If the user is already on the Access tab, start loading immediately
-    if (currentTab === 'access') accessView.activate();
 
     // Kick off background stat loading (streams + tagged assets per card)
     // Non-blocking: cards show "–" placeholders until each facility resolves

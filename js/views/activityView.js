@@ -414,24 +414,22 @@ function facilityRow(r) {
 
 function buildStreamChip(sh) {
     const parts = [];
-    const total = sh.total;
 
-    if (sh.offline > 0) {
-        parts.push(`<span class="px-1.5 py-0.5 rounded text-xs font-medium" style="background:#7f1d1d22;color:#f87171;border:1px solid #7f1d1d66">
-            ${ICON_STREAMS} ${sh.offline} offline
+    // Order: ok (green) → silent (amber) → offline (red)
+    if (sh.online > 0) {
+        parts.push(`<span class="px-1.5 py-0.5 rounded text-xs font-medium" style="background:#06432022;color:#34d399;border:1px solid #06432066">
+            ${ICON_STREAMS} ${sh.online} ok
         </span>`);
     }
     if (sh.warning > 0) {
         parts.push(`<span class="px-1.5 py-0.5 rounded text-xs font-medium" style="background:#78350f22;color:#fbbf24;border:1px solid #78350f66">
-            ${sh.warning} silent
+            ${ICON_STREAMS} ${sh.warning} silent
         </span>`);
     }
-    if (sh.offline === 0 && sh.warning === 0 && sh.total > 0) {
-        parts.push(`<span class="px-1.5 py-0.5 rounded text-xs" style="background:#06432022;color:#34d399;border:1px solid #06432066">
-            ${ICON_STREAMS} ${sh.online}/${total} active
+    if (sh.offline > 0) {
+        parts.push(`<span class="px-1.5 py-0.5 rounded text-xs font-medium" style="background:#7f1d1d22;color:#f87171;border:1px solid #7f1d1d66">
+            ${ICON_STREAMS} ${sh.offline} offline
         </span>`);
-    } else if (sh.online > 0) {
-        parts.push(`<span class="text-xs text-dark-text-secondary opacity-60">${ICON_STREAMS} ${sh.online} ok</span>`);
     }
 
     return parts.join('');
