@@ -36,6 +36,7 @@ import * as accessView    from './views/accessView.js';
 import * as activityView  from './views/activityView.js';
 import * as ticketsView   from './views/ticketsView.js';
 import * as accountsView  from './views/accountsView.js';
+import * as chatView     from './views/chatView.js';
 
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 const loginBtn        = document.getElementById('loginBtn');
@@ -236,6 +237,7 @@ async function switchAccount(accountName) {
     accessView.render(facilities, facilityRegionMap);
     activityView.render(facilities, facilityRegionMap);
     ticketsView.render(facilities, facilityRegionMap);
+    chatView.render(facilities, facilityRegionMap, currentAccountName, accounts);
     accountsView.render(accounts);
 
     // Always land on Portfolio when switching accounts — ensures every lazy
@@ -358,7 +360,7 @@ async function loadAllFacilityStats(facilities, accountAtStart) {
 
 // ── Tab switching ─────────────────────────────────────────────────────────────
 
-const TABS = ['portfolio', 'map', 'access', 'compare', 'activity', 'tickets', 'accounts'];
+const TABS = ['portfolio', 'map', 'access', 'compare', 'activity', 'tickets', 'accounts', 'chat'];
 
 function switchTab(tabId) {
     currentTab = tabId;
@@ -379,6 +381,7 @@ function switchTab(tabId) {
     if (tabId === 'access')   accessView.activate();
     if (tabId === 'activity') activityView.activate();
     if (tabId === 'tickets')  ticketsView.activate();
+    if (tabId === 'chat')     chatView.activate();
     if (tabId === 'accounts') accountsView.activate();
 }
 

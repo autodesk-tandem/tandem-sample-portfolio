@@ -1,7 +1,7 @@
 # Project Overview
 
 > **Status:** Active prototype — iteratively developed with AI assistance  
-> **Last updated:** 2026-10-06
+> **Last updated:** 2026-10-08
 
 ## Purpose
 
@@ -33,6 +33,7 @@ Initially an internal Autodesk prototype; quality is held to production standard
 | Activity | ✅ Live | Cross-facility recent-activity feed; 30-day summary (facility/stream/model changes + contributors); "Open in Stats" punch-out |
 | Tickets  | ✅ Live | Portfolio-wide work order summary; open/closed counts per facility; drill-down with priority breakdown, filter, and sort |
 | Accounts | ✅ Live | Cross-account leaderboard ranked by 7 metrics; 403-forbidden accounts handled gracefully |
+| AI Chat | ✅ Live | Natural-language questions answered from live Tandem data via read-only tool calling; inline charts; optional Tandem MCP for general Tandem questions. Bring-your-own OpenAI/Anthropic key |
 
 ## Key Features
 
@@ -77,6 +78,19 @@ Initially an internal Autodesk prototype; quality is held to production standard
 - 7 sort metrics: Facilities, Models, Streams, Assets, Connections, Elements, Storage
 - Bars scale to account-wide max per metric
 - 403-forbidden accounts shown with "No access" warning, sorted to bottom, dimmed
+
+### AI Chat tab
+- Chat with an LLM (OpenAI or Anthropic) that can call **read-only tools** over the account's live data:
+  accounts, facilities, models, levels, rooms, systems, tagged assets, documents, saved views, stream
+  health and values, tickets, recent activity and access — per facility and portfolio-wide
+- Answers render as sanitized markdown (tables, lists, code) with a copy button
+- **Inline charts** (line / bar / pie / doughnut) drawn from tool data via `chart_stream_values` and `show_chart`; "Save PNG" button
+- Tool failures are surfaced to the model as warnings so it never presents partial data as complete
+- Optional **Tandem MCP** (Anthropic only): connects the Tandem cloud MCP server so the assistant can answer
+  general "how does Tandem work" questions; falls back to the built-in tools if MCP auth fails
+- User supplies their own API key in the ⚙ Settings panel (stored in this browser's `localStorage` only)
+- Nothing is written to Tandem — no write tools are exposed. (The Tandem MCP server itself offers write
+  tools; they are reachable through MCP if the user authorizes it, so treat MCP as an advanced option)
 
 ## Punch-out to tandem-sample-stats
 
