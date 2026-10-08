@@ -849,9 +849,11 @@ export async function getStreamConfigs(facilityURN, region) {
  * Tickets only exist in the default model
  * @param {string} facilityURN - Facility URN
  * @param {string} region - Region identifier
+ * @param {{rethrow?: boolean}} [opts] - rethrow request failures instead of returning []
+ *   (a 403 on a missing default model still returns [] — that is "no tickets", not a failure)
  * @returns {Promise<Array>} Array of ticket objects
  */
-export async function getTickets(facilityURN, region) {
+export async function getTickets(facilityURN, region, { rethrow = false } = {}) {
   try {
     const defaultModelURN = getDefaultModelURN(facilityURN);
     
@@ -886,6 +888,7 @@ export async function getTickets(facilityURN, region) {
     return tickets;
   } catch (error) {
     console.error('Error fetching tickets:', error);
+    if (rethrow) throw error;
     return [];
   }
 }
@@ -1745,14 +1748,16 @@ export async function getFacilityViews(facilityURN, region) {
  */
 export async function getFacilityStats(facilityURN, region) {
   try {
+    // A failed ticket fetch must not look like "no tickets" — flag it so the Tickets tab can say so.
+    let ticketsError = false;
     const [streams, taggedAssetCount, tickets] = await Promise.all([
       getStreams(facilityURN, region),
       getTaggedAssetsCount(facilityURN, region),
-      getTickets(facilityURN, region),
+      getTickets(facilityURN, region, { rethrow: true }).catch(() => { ticketsError = true; return []; }),
     ]);
     const openTicketCount   = tickets.filter(t => !t[QC.CloseDate]?.[0]).length;
     const closedTicketCount = tickets.length - openTicketCount;
-    return { streamCount: streams.length, taggedAssetCount, openTicketCount, closedTicketCount };
+    return { streamCount: streams.length, taggedAssetCount, openTicketCount, closedTicketCount, ticketsError };
   } catch (err) {
     console.error('Error fetching facility stats:', err);
     return { streamCount: 0, taggedAssetCount: 0, openTicketCount: 0, closedTicketCount: 0 };

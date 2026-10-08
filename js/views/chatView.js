@@ -836,7 +836,7 @@ function renderSettingsPane() {
                     Lets the assistant answer general Tandem questions. Needs the Client ID of an APS app with this page's
                     <code class="text-tandem-blue">mcp-callback.html</code> registered as a callback.
                 </p>
-                <input id="chat-mcp-client-id" type="text" placeholder="MCP Client ID"
+                <input id="chat-mcp-client-id" type="password" autocomplete="off" placeholder="MCP Client ID"
                        value="${escAttr(_settings.mcpClientId)}" class="${INPUT_CLS} mb-2"/>
                 <div class="flex gap-2">
                     <button id="chat-mcp-authorize"

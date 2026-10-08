@@ -885,7 +885,7 @@ defineTool('get_portfolio_tickets',
         // Skip facilities already known to have no matching tickets (saves a scan each)
         const targets = ctx.facilities.slice(0, MAX_PORTFOLIO_SCAN).filter(f => {
             const s = store.get(f.urn);
-            if (!s) return true;
+            if (!s || s.ticketsError) return true;   // unknown or failed count — scan to be sure
             const open = s.openTicketCount ?? 0, closed = s.closedTicketCount ?? 0;
             return status === 'open' ? open > 0 : status === 'closed' ? closed > 0 : open + closed > 0;
         });

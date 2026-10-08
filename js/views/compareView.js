@@ -29,11 +29,19 @@ const ICON_ASSETS = `<svg class="w-3.5 h-3.5 inline-block shrink-0 align-middle"
           d="M7 7h10M7 12h6m-6 5h4M5 3h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z"/>
 </svg>`;
 
+const ICON_TICKET = `<svg class="w-3.5 h-3.5 inline-block shrink-0 align-middle" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+          d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z"/>
+</svg>`;
+
 // ── State ─────────────────────────────────────────────────────────────────────
 let _facilities = [];           // full list for the account
 let _regionMap  = new Map();    // urn → region string
 let _statsMap   = new Map();    // urn → { streamCount, taggedAssetCount } | { error: true } | undefined (loading)
 let _selected   = [];           // ordered array of selected URNs
+let _chartMode  = 'radar';      // 'radar' | 'bars'
+let _charts     = [];           // live Chart.js instances (destroyed on every redraw)
+let _chartTimer = null;         // debounce: stats arrive one facility at a time
 
 // ── DOM ───────────────────────────────────────────────────────────────────────
 const wrap = document.getElementById('compareContent');
@@ -45,6 +53,8 @@ export function render(facilities, regionMap) {
     _regionMap  = regionMap;
     _statsMap   = new Map();
     _selected   = _facilities.slice(0, Math.min(4, _facilities.length)).map(f => f.urn);
+    clearTimeout(_chartTimer);
+    destroyCharts();
     if (wrap) renderShell();
 }
 
@@ -87,6 +97,9 @@ function renderShell() {
 
         <!-- Comparison table (scrollable horizontally) -->
         <div id="cmp-table-wrap" class="mb-10 overflow-x-auto"></div>
+
+        <!-- Visual comparison (radar / bars) -->
+        <div id="cmp-charts-wrap" class="mb-10"></div>
 
         <!-- Outlier detection panel -->
         <div id="cmp-outliers-wrap"></div>
@@ -194,6 +207,7 @@ const NUMERIC_METRICS = [
     { key: 'modelCount',   label: 'Models',        icon: ICON_MODELS,   color: '#10B981' },
     { key: 'streamCount',  label: 'Streams',        icon: ICON_STREAMS,  color: '#EC4899' },
     { key: 'taggedAssets', label: 'Tagged Assets',  icon: ICON_ASSETS,   color: '#F59E0B' },
+    { key: 'openTickets',  label: 'Open Tickets',   icon: ICON_TICKET,   color: '#FB923C' },
 ];
 
 /** Text / categorical metrics (no outlier logic). */
@@ -214,6 +228,8 @@ function getRowData(urn) {
         modelCount:  cache?.modelCount ?? null,
         streamCount: stats?.streamCount     ?? null,
         taggedAssets:stats?.taggedAssetCount ?? null,
+        // A failed ticket fetch is unknown, not zero
+        openTickets: stats?.ticketsError ? null : (stats?.openTicketCount ?? null),
         loading:     stats === undefined,
         error:       !!stats?.error,
     };
@@ -222,6 +238,8 @@ function getRowData(urn) {
 function refreshTable() {
     const tableWrap = document.getElementById('cmp-table-wrap');
     if (!tableWrap) return;
+
+    scheduleCharts();
 
     if (_selected.length === 0) {
         tableWrap.innerHTML = `
@@ -306,6 +324,175 @@ function numericCell(r, m, threshold) {
 
     return `<td class="px-3 py-2.5 text-center border-b border-dark-border/50"
                 style="${style}">${content}</td>`;
+}
+
+// ── Visual comparison (charts) ────────────────────────────────────────────────
+
+const CHART_TEXT = '#e0e0e0';
+const CHART_MUTED = '#a0a0a0';
+const CHART_GRID = '#404040';
+
+function destroyCharts() {
+    _charts.forEach(c => c.destroy());
+    _charts = [];
+}
+
+function scheduleCharts() {
+    clearTimeout(_chartTimer);
+    _chartTimer = setTimeout(refreshCharts, 120);
+}
+
+/** Largest value of each metric across every facility whose stats have loaded. */
+function accountMaxima() {
+    const max = { modelCount: 1, streamCount: 1, taggedAssets: 1, openTickets: 1 };
+    for (const f of _facilities) {
+        const s = _statsMap.get(f.urn);
+        if (!s || s.error) continue;
+        max.modelCount  = Math.max(max.modelCount,  getCachedSummary(f.urn)?.modelCount ?? 0);
+        max.streamCount = Math.max(max.streamCount, s.streamCount ?? 0);
+        max.taggedAssets = Math.max(max.taggedAssets, s.taggedAssetCount ?? 0);
+        if (!s.ticketsError) max.openTickets = Math.max(max.openTickets, s.openTicketCount ?? 0);
+    }
+    return max;
+}
+
+function shorten(name, n = 24) {
+    return name.length > n ? name.slice(0, n - 1) + '…' : name;
+}
+
+function refreshCharts() {
+    const el = document.getElementById('cmp-charts-wrap');
+    if (!el) return;
+    destroyCharts();
+
+    if (typeof Chart === 'undefined') { el.innerHTML = ''; return; }
+
+    const ready = _selected
+        .map((urn, i) => ({ ...getRowData(urn), color: PILL_COLORS[i % PILL_COLORS.length] }))
+        .filter(r => !r.loading && !r.error);
+
+    const toggleBtn = (mode, label) => {
+        const active = _chartMode === mode;
+        return `<button data-chart-mode="${mode}"
+                    class="px-2.5 py-1 text-xs rounded border transition ${active
+                        ? 'border-tandem-blue text-tandem-blue'
+                        : 'border-dark-border text-dark-text-secondary hover:border-dark-text'}">${label}</button>`;
+    };
+
+    const header = `
+        <div class="flex items-center justify-between mb-3">
+            <div>
+                <h3 class="text-sm font-semibold text-dark-text">Visual Comparison</h3>
+                <p class="text-xs text-dark-text-secondary">
+                    ${_chartMode === 'radar'
+                        ? 'Each axis is scaled to the largest facility in the account (100%). Hover for actual values.'
+                        : 'Actual values per metric.'}
+                </p>
+            </div>
+            <div class="flex gap-2">${toggleBtn('radar', 'Radar')}${toggleBtn('bars', 'Bars')}</div>
+        </div>`;
+
+    if (!ready.length) {
+        el.innerHTML = header + `<p class="text-xs text-dark-text-secondary italic py-6 text-center">
+            ${_selected.length ? 'Waiting for facility stats…' : 'Select facilities to compare.'}</p>`;
+    } else if (_chartMode === 'radar') {
+        el.innerHTML = header + `<div class="relative mx-auto" style="max-width:520px;height:380px"><canvas id="cmp-radar"></canvas></div>`;
+        drawRadar(ready);
+    } else {
+        el.innerHTML = header + `<div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            ${NUMERIC_METRICS.map(m => `
+                <div>
+                    <p class="text-xs font-medium mb-1" style="color:${m.color}">${m.icon} ${m.label}</p>
+                    <div class="relative" style="height:${60 + ready.length * 34}px"><canvas id="cmp-bar-${m.key}"></canvas></div>
+                </div>`).join('')}
+        </div>`;
+        drawBars(ready);
+    }
+
+    el.querySelectorAll('[data-chart-mode]').forEach(btn => {
+        btn.addEventListener('click', () => { _chartMode = btn.dataset.chartMode; refreshCharts(); });
+    });
+}
+
+function drawRadar(rows) {
+    const max = accountMaxima();
+    const datasets = rows.map(r => {
+        const raw = NUMERIC_METRICS.map(m => r[m.key] ?? 0);
+        return {
+            label: r.name,
+            raw,
+            data: NUMERIC_METRICS.map((m, i) => Math.round((raw[i] / max[m.key]) * 100)),
+            borderColor: r.color,
+            backgroundColor: r.color + '33',
+            pointBackgroundColor: r.color,
+            borderWidth: 2,
+            pointRadius: 3,
+        };
+    });
+
+    _charts.push(new Chart(document.getElementById('cmp-radar'), {
+        type: 'radar',
+        data: { labels: NUMERIC_METRICS.map(m => m.label), datasets },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                r: {
+                    min: 0, max: 100,
+                    ticks: { stepSize: 25, color: CHART_MUTED, backdropColor: 'transparent', callback: v => v + '%' },
+                    grid: { color: CHART_GRID },
+                    angleLines: { color: CHART_GRID },
+                    pointLabels: { color: CHART_TEXT, font: { size: 12 }, padding: 10 },
+                },
+            },
+            plugins: {
+                legend: { labels: { color: CHART_TEXT, boxWidth: 12 } },
+                tooltip: {
+                    callbacks: {
+                        label: ctx => `${ctx.dataset.label}: ${ctx.dataset.raw[ctx.dataIndex].toLocaleString()} (${ctx.parsed.r}% of max)`,
+                    },
+                },
+            },
+        },
+    }));
+}
+
+function drawBars(rows) {
+    for (const m of NUMERIC_METRICS) {
+        const canvas = document.getElementById(`cmp-bar-${m.key}`);
+        if (!canvas) continue;
+        _charts.push(new Chart(canvas, {
+            type: 'bar',
+            data: {
+                labels: rows.map(r => shorten(r.name)),
+                datasets: [{
+                    data: rows.map(r => r[m.key] ?? 0),
+                    backgroundColor: rows.map(r => r.color + 'cc'),
+                    borderColor: rows.map(r => r.color),
+                    borderWidth: 1,
+                    borderRadius: 3,
+                }],
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: { beginAtZero: true, ticks: { color: CHART_MUTED, precision: 0 }, grid: { color: CHART_GRID } },
+                    y: { ticks: { color: CHART_TEXT, font: { size: 11 } }, grid: { display: false } },
+                },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            title: items => rows[items[0].dataIndex].name,
+                            label: ctx => `${m.label}: ${ctx.parsed.x.toLocaleString()}`,
+                        },
+                    },
+                },
+            },
+        }));
+    }
 }
 
 // ── Outlier panel ─────────────────────────────────────────────────────────────
@@ -429,13 +616,15 @@ function computeThresholds() {
             modelCount:   c?.modelCount ?? 0,
             streamCount:  s.streamCount ?? 0,
             taggedAssets: s.taggedAssetCount ?? 0,
+            openTickets:  s.ticketsError ? null : (s.openTicketCount ?? 0),
         };
     }).filter(Boolean);
 
     const result = {};
-    for (const key of ['modelCount', 'streamCount', 'taggedAssets']) {
+    for (const key of ['modelCount', 'streamCount', 'taggedAssets', 'openTickets']) {
         if (loaded.length < 2) { result[key] = null; continue; }
-        const vals   = loaded.map(x => x[key]);
+        const vals   = loaded.map(x => x[key]).filter(v => v !== null);
+        if (vals.length < 2) { result[key] = null; continue; }
         const mean   = vals.reduce((a, b) => a + b, 0) / vals.length;
         const stdDev = Math.sqrt(vals.map(v => (v - mean) ** 2).reduce((a, b) => a + b, 0) / vals.length);
         result[key]  = stdDev >= 0.5 ? { mean, stdDev } : null;

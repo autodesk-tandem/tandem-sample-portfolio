@@ -52,7 +52,8 @@ Initially an internal Autodesk prototype; quality is held to production standard
 
 ### Compare tab
 - Searchable pill selector — add up to 6 facilities
-- Side-by-side table: Models, Streams, Tagged Assets (with loading spinners), Template, Region
+- Side-by-side table: Models, Streams, Tagged Assets, Open Tickets (with loading spinners), Template, Region
+- **Visual comparison** panel: Radar (each axis scaled to the account's largest facility = 100%, hover for real values) or Bars (one chart per metric); colors match the selection pills
 - Outlier cells highlighted: 🔴▲ above average, 🟡▼ below average (±1.5σ threshold)
 - Portfolio outlier panel: scans ALL account facilities and surfaces statistical anomalies as alert cards
 
@@ -66,6 +67,7 @@ Initially an internal Autodesk prototype; quality is held to production standard
 - Refresh button to re-scan without full page reload
 
 ### Tickets tab
+- A failed ticket load shows "Couldn't load tickets" with a Retry (per row and for all), never a false zero
 - One row per facility sorted by open ticket count; indicator dot orange/green
 - Sort by: Most Open / Most Critical / Most Total
 - Drill-down panel loads full ticket list on click (lazy, single `/scan` on default model)

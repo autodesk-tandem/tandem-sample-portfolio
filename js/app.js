@@ -350,6 +350,7 @@ async function loadAllFacilityStats(facilities, accountAtStart) {
                 console.warn(`Stats load ${isTimeout ? 'timed out' : 'failed'} for ${f.name}:`, err);
                 updateCardStats(f.urn, { error: true, timedOut: isTimeout });
                 updateCompareStats(f.urn, { error: true });
+                ticketsView.updateStats();
             }
         }
     }
@@ -415,12 +416,14 @@ async function initialize() {
     activityView.setOpenStatsCallback(openDetails);
 
     // Event: "Retry" on cards that timed out or failed to load stats
-    setRetryStatsCallback(urn => {
+    const retryStats = urn => {
         const facility = (accounts.find(a => a.name === currentAccountName)?.facilities ?? [])
             .find(f => f.urn === urn);
         if (!facility) return;
         loadAllFacilityStats([facility], currentAccountName).catch(() => {});
-    });
+    };
+    setRetryStatsCallback(retryStats);
+    ticketsView.setRetryCallback(retryStats);
 
     // Event: load more button + grid click delegation
     initLoadMore();
