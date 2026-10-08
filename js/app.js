@@ -237,7 +237,7 @@ async function switchAccount(accountName) {
     accessView.render(facilities, facilityRegionMap);
     activityView.render(facilities, facilityRegionMap);
     ticketsView.render(facilities, facilityRegionMap);
-    chatView.render(facilities, facilityRegionMap, currentAccountName);
+    chatView.render(facilities, facilityRegionMap, currentAccountName, accounts);
     accountsView.render(accounts);
 
     // Always land on Portfolio when switching accounts — ensures every lazy
@@ -360,7 +360,7 @@ async function loadAllFacilityStats(facilities, accountAtStart) {
 
 // ── Tab switching ─────────────────────────────────────────────────────────────
 
-const TABS = ['portfolio', 'map', 'access', 'compare', 'activity', 'tickets', 'chat', 'accounts'];
+const TABS = ['portfolio', 'map', 'access', 'compare', 'activity', 'tickets', 'accounts', 'chat'];
 
 function switchTab(tabId) {
     currentTab = tabId;

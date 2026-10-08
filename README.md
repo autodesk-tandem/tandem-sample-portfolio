@@ -26,6 +26,7 @@ using the same Tandem REST API, OAuth PKCE pattern, and visual design language.
 | **Activity** | Cross-facility activity feed. Each facility row shows stream health and open ticket count. Click a row for a 30-day summary (facility changes, contributors, stream health, model changes) with an "Open in Stats" punch-out. |
 | **Tickets** | Portfolio-wide work order summary. Ranks facilities by open ticket count. Click to drill down into per-ticket details with priority filters and sort controls. |
 | **Accounts** | Cross-account leaderboard ranked by 7 metrics: Facilities, Models, Streams, Assets, Connections, Elements, and Storage. |
+| **AI Chat** | Ask questions in plain English ("Which facility has the most offline streams?"). The assistant calls read-only tools over your live Tandem data and can draw charts inline. Bring your own OpenAI or Anthropic API key. See [AI Chat setup](#ai-chat-setup). |
 
 **"Open in Stats" punch-out:** clicking this on any facility card opens
 [`tandem-sample-stats`](https://github.com/autodesk-tandem/tandem-sample-stats) pre-selected
@@ -72,6 +73,30 @@ versions.
 
 ---
 
+## AI Chat setup
+
+1. Open the **AI Chat** tab and click **⚙ Settings**.
+2. Choose a provider (OpenAI or Anthropic), a model, and paste your API key. The key is stored in this
+   browser's `localStorage` only and sent directly to the provider — use a restricted key, and note that
+   tool results (facility names, counts, tickets, stream values…) are sent to that provider.
+3. Ask a question. Click the assistant's copy icon to copy an answer; charts have a **Save PNG** button.
+
+### Optional: Tandem MCP (Anthropic only)
+
+Connecting the Tandem MCP server lets the assistant answer general questions about how Tandem works.
+
+1. In your APS app (public/PKCE type), add these **Callback URLs**:
+   - `http://localhost:8001/mcp-callback.html` (and `http://localhost:8000/…` if you use it)
+   - the deployed `…/mcp-callback.html` URL
+   The app must be allowed to request the `mcp:read mcp:write offline_access` scopes (an app of the
+   "MCP Client hosted on Desktop, Mobile, Browser" type).
+2. In Settings, paste that app's Client ID under **Tandem MCP** and click **Authorize**, then **Save**.
+
+The MCP server also exposes tools that modify data, so only authorize it when you need it. If the token
+expires the chat falls back to the built-in read-only tools — re-authorize to restore MCP.
+
+---
+
 ## Project structure
 
 ```
@@ -85,6 +110,9 @@ tandem-sample-portfolio/
 │   ├── state/
 │   │   ├── facilityCache.js   # In-memory facility summary cache
 │   │   └── locationStore.js   # Facility lat/lng (localStorage)
+│   ├── chat/
+│   │   ├── tools.js           # Read-only tools the assistant can call
+│   │   └── chartRenderer.js   # Inline chart rendering
 │   └── views/
 │       ├── portfolioView.js   # Card grid + leaderboard
 │       ├── mapView.js         # Leaflet map + location form
@@ -92,7 +120,9 @@ tandem-sample-portfolio/
 │       ├── compareView.js     # Side-by-side comparison + outliers
 │       ├── activityView.js    # Cross-facility activity feed + 30-day summary drill-down
 │       ├── ticketsView.js     # Portfolio-wide work order / ticket summary
-│       └── accountsView.js    # Cross-account leaderboard
+│       ├── accountsView.js    # Cross-account leaderboard
+│       └── chatView.js        # AI Chat tab (LLM streaming, agent loop, settings)
+├── mcp-callback.html       # OAuth callback for the optional Tandem MCP connection
 ├── tandem/
 │   ├── constants.js        # Tandem column families, names, element flags
 │   └── keys.js             # Key/xref conversion utilities

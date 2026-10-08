@@ -44,6 +44,9 @@ tandem-sample-portfolio/
 │   ├── state/
 │   │   ├── facilityCache.js   # In-memory facility summary cache (session-scoped)
 │   │   └── locationStore.js   # Facility lat/lng — persisted in localStorage
+│   ├── chat/
+│   │   ├── tools.js           # Read-only tool registry (defineTool) + TOOL_DEFS/executeTool
+│   │   └── chartRenderer.js   # Validates chart specs and draws them with Chart.js
 │   └── views/
 │       ├── portfolioView.js   # Card grid + leaderboard; account metrics banner
 │       ├── mapView.js         # Leaflet map; inline location form
@@ -51,7 +54,9 @@ tandem-sample-portfolio/
 │       ├── compareView.js     # Side-by-side table + outlier detection
 │       ├── activityView.js    # Cross-facility activity feed + 30-day summary drill-down
 │       ├── ticketsView.js     # Portfolio-wide work order / ticket summary
-│       └── accountsView.js    # Cross-account leaderboard
+│       ├── accountsView.js    # Cross-account leaderboard
+│       └── chatView.js        # AI Chat: settings, LLM streaming (OpenAI/Anthropic), agent loop, markdown
+├── mcp-callback.html       # Static OAuth callback for the Tandem MCP authorization popup
 ├── tandem/
 │   ├── constants.js        # Column families, names, element flags, QC (inherited)
 │   └── keys.js             # Key/xref conversion utilities (inherited)
@@ -169,7 +174,7 @@ Cookie-based token sharing (localhost only) is layered on top:
 ## Constraints (Non-negotiable)
 
 - No hardcoded column names or magic numbers — always use `tandem/constants.js`
-- No credentials or tokens in `localStorage` beyond what `auth.js` manages
+- No credentials or tokens in `localStorage` beyond what `auth.js` manages — **sole exception:** the AI Chat tab stores the user's own LLM API key and MCP token there (see `security.md`)
 - No direct imports from `dt-client`, `viewer`, or `dt-server` — proprietary
 - All external API calls use HTTPS only
 - Never commit or log access tokens
@@ -185,3 +190,9 @@ Cookie-based token sharing (localhost only) is layered on top:
 | Template source | `GET /twins/{urn}/template` (lightweight endpoint, not the heavy `/inlinetemplate?flatten`) |
 | Location storage | `localStorage` keyed by `portfolio:location:{facilityURN}` |
 | Cross-origin punch-out | URL hash params + sessionStorage; cookies as localhost bonus |
+| AI chat tool calling | Client-side function calling. Tools are defined once in `js/chat/tools.js` (`defineTool`); `TOOL_DEFS` is sent to the model in OpenAI format and converted to Anthropic `input_schema`. The loop in `chatView.js` (max 10 rounds) runs requested tools in parallel and feeds results back |
+| Tool results | Compact, pre-aggregated JSON; user IDs and document links are never returned to the model. Portfolio-wide tools scan at most 100 facilities with a concurrency-5 pool |
+| Silent API failures | `api.js` swallows errors and returns sentinels, so `executeTool` observes `window.fetch` while a tool runs and adds a `warnings` list for real failures (404s and expected 403s are ignored) |
+| Charts | Model emits a chart spec via a tool; the UI draws it (Chart.js). Specs travel to the UI through a side channel (`onChart`), never back through the model; caps on datasets/points |
+| Markdown | `marked` + `DOMPurify` from CDN (SRI-pinned); output is always sanitized |
+| Tandem MCP | Anthropic MCP connector (`mcp-client-2025-11-20`): `mcp_servers` entry plus an `mcp_toolset` in `tools`. OAuth PKCE via `developer.api.autodesk.com/mcpauth/v1` using the Client ID of an APS app that has `mcp-callback.html` registered as a callback; scopes `mcp:read mcp:write offline_access`. Raw token is passed (connector adds `Bearer`). On an MCP 400 the request is retried without MCP |

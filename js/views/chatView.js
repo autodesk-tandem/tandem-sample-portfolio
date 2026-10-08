@@ -5,23 +5,17 @@
  * Supports OpenAI and Anthropic APIs directly from the browser.
  * The user supplies their own API key (stored in localStorage only).
  *
- * Tools (read-only):
- *   list_facilities      — names, URNs, cached stats
- *   get_stream_health    — per-stream online/silent/offline status
- *   get_tickets          — work orders with priority + status
- *   get_recent_activity  — change history summary
- *   get_models           — list 3D models in a facility
+ * The read-only tools the model can call live in ../chat/tools.js.
  */
 
-import { getStreams, getLastSeenStreamValues, getTickets, getTwinHistory, getModels } from '../api.js';
-import { getStatsStore } from './portfolioView.js';
-import { QC } from '../../tandem/constants.js';
-import { toShortKey } from '../../tandem/keys.js';
+import { TOOL_DEFS, executeTool, setToolContext } from '../chat/tools.js';
+import { renderChart } from '../chat/chartRenderer.js';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 const SETTINGS_KEY = 'tandem-chat-settings';
-const ONLINE_MS    = 24 * 60 * 60 * 1000;      // < 24h  → online
-const WARNING_MS   = 7  * 24 * 60 * 60 * 1000; // < 7d   → silent
+const MCP_BETA     = 'mcp-client-2025-11-20';   // current MCP connector version (2025-04-04 is deprecated)
+const MCP_NAME     = 'tandem';
+const MCP_URL      = 'https://developer.api.autodesk.com/tandem-mcp-server/v1/mcp';
 const MAX_LOOP     = 10; // prevent runaway agentic loops
 
 const PROVIDERS = {
@@ -48,14 +42,15 @@ const PROVIDERS = {
     },
 };
 
-const PRIORITY_ORDER = { Critical: 0, High: 1, Medium: 2, Low: 3, Trivial: 4 };
-
 // ── Module state ───────────────────────────────────────────────────────────────
 let _facilities  = [];
 let _regionMap   = null;
 let _accountName = '';
+let _accounts    = [];
+let _charts      = [];   // live chart instances, destroyed when the chat is reset
 let _history     = [];       // conversation history in OpenAI message format
 let _isThinking  = false;
+let _mcpFailed   = false;   // set when Anthropic rejects the MCP server; reset on settings save
 let _loaded      = false;
 let _settings    = loadSettings();
 
@@ -67,234 +62,19 @@ function loadSettings() {
             provider:    s.provider    || 'openai',
             apiKey:      s.apiKey      || '',
             model:       s.model       || 'gpt-4o',
-            mcpURL:      s.mcpURL      || '',
-            mcpToken:    s.mcpToken    || '',
-            mcpClientId: s.mcpClientId || '',  // APS CLIENT_ID that has mcp:read mcp:write registered
+            mcpClientId: s.mcpClientId || '',   // APS app Client ID with the MCP callbacks registered
+            mcpToken:    s.mcpToken    || '',   // set by "Authorize"; never typed by hand
         };
-    } catch { return { provider: 'openai', apiKey: '', model: 'gpt-4o', mcpURL: '' }; }
+    } catch { return { provider: 'openai', apiKey: '', model: 'gpt-4o', mcpClientId: '', mcpToken: '' }; }
+}
+
+// MCP runs through Anthropic's connector, so it needs an Anthropic provider and a token.
+function mcpEnabled() {
+    return _settings.provider === 'anthropic' && !!_settings.mcpToken && !_mcpFailed;
 }
 
 function saveSettings() {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(_settings));
-}
-
-// ── Tool definitions (OpenAI function-calling format) ──────────────────────────
-const TOOL_DEFS = [
-    {
-        type: 'function',
-        function: {
-            name: 'list_facilities',
-            description:
-                'List all facilities in the current account. Returns name, URN, and cached stats ' +
-                '(stream count, tagged asset count, open ticket count, closed ticket count) for each.',
-            parameters: { type: 'object', properties: {}, required: [] },
-        },
-    },
-    {
-        type: 'function',
-        function: {
-            name: 'get_stream_health',
-            description:
-                'Get detailed IoT stream health for a specific facility. Returns each stream name ' +
-                'and its status: online (data within 24 h), silent (1–7 days), or offline (>7 days).',
-            parameters: {
-                type: 'object',
-                properties: {
-                    facility_urn: { type: 'string', description: 'Facility URN (urn:adsk.dtt:…)' },
-                },
-                required: ['facility_urn'],
-            },
-        },
-    },
-    {
-        type: 'function',
-        function: {
-            name: 'get_tickets',
-            description:
-                'Get work order tickets for a facility. Returns ticket names, priority ' +
-                '(Critical/High/Medium/Low/Trivial), status (open/closed), and dates.',
-            parameters: {
-                type: 'object',
-                properties: {
-                    facility_urn: { type: 'string', description: 'Facility URN' },
-                    status: {
-                        type: 'string',
-                        enum: ['all', 'open', 'closed'],
-                        description: 'Filter by status (default: all)',
-                    },
-                },
-                required: ['facility_urn'],
-            },
-        },
-    },
-    {
-        type: 'function',
-        function: {
-            name: 'get_recent_activity',
-            description:
-                'Get recent change history for a facility. Shows total changes, unique contributors, ' +
-                'change types breakdown, and the most recent events.',
-            parameters: {
-                type: 'object',
-                properties: {
-                    facility_urn: { type: 'string', description: 'Facility URN' },
-                    days: { type: 'integer', description: 'Days of history to retrieve (default 30, max 90)' },
-                },
-                required: ['facility_urn'],
-            },
-        },
-    },
-    {
-        type: 'function',
-        function: {
-            name: 'get_models',
-            description: 'List the 3D models (e.g. Revit BIM imports) in a facility.',
-            parameters: {
-                type: 'object',
-                properties: {
-                    facility_urn: { type: 'string', description: 'Facility URN' },
-                },
-                required: ['facility_urn'],
-            },
-        },
-    },
-];
-
-// ── Tool executor ──────────────────────────────────────────────────────────────
-async function executeTool(name, args) {
-    const f      = _facilities.find(fac => fac.urn === args.facility_urn);
-    const region = f ? (_regionMap?.get(f.urn) ?? f.region ?? 'us') : 'us';
-
-    switch (name) {
-
-        case 'list_facilities': {
-            const store = getStatsStore();
-            return _facilities.map(fac => {
-                const s = store.get(fac.urn) ?? {};
-                return {
-                    name:             fac.name,
-                    urn:              fac.urn,
-                    streamCount:      s.streamCount      ?? null,
-                    taggedAssetCount: s.taggedAssetCount ?? null,
-                    openTicketCount:  s.openTicketCount  ?? null,
-                    closedTicketCount: s.closedTicketCount ?? null,
-                };
-            });
-        }
-
-        case 'get_stream_health': {
-            if (!f) return { error: `Facility not found: ${args.facility_urn}` };
-
-            const streams = await getStreams(f.urn, region);
-            if (!streams?.length) return { facilityName: f.name, summary: { online: 0, silent: 0, offline: 0 }, streams: [] };
-
-            const shortKeys = streams.map(s => s[QC.Key]).filter(Boolean);
-            const lastSeen  = await getLastSeenStreamValues(f.urn, region, shortKeys);
-            const now       = Date.now();
-
-            const result = streams.map(stream => {
-                const key  = stream[QC.Key];
-                const name = stream[QC.OName]?.[0] ?? stream[QC.Name]?.[0] ?? 'Unnamed';
-
-                // Find max timestamp for this stream across all properties
-                let lastTs = 0;
-                for (const [longKey, propMap] of Object.entries(lastSeen ?? {})) {
-                    let shortK;
-                    try { shortK = toShortKey(longKey); } catch { continue; }
-                    if (shortK !== key) continue;
-                    for (const inner of Object.values(propMap ?? {})) {
-                        for (const tsStr of Object.keys(inner ?? {})) {
-                            const ts = Number(tsStr);
-                            if (ts > lastTs) lastTs = ts;
-                        }
-                    }
-                }
-
-                const age    = lastTs ? now - lastTs : Infinity;
-                const status = age < ONLINE_MS ? 'online' : age < WARNING_MS ? 'silent' : 'offline';
-                return { name, status, lastSeen: lastTs ? new Date(lastTs).toLocaleString() : 'never' };
-            });
-
-            const summary = {
-                online:  result.filter(s => s.status === 'online').length,
-                silent:  result.filter(s => s.status === 'silent').length,
-                offline: result.filter(s => s.status === 'offline').length,
-            };
-
-            return { facilityName: f.name, summary, streams: result };
-        }
-
-        case 'get_tickets': {
-            if (!f) return { error: `Facility not found: ${args.facility_urn}` };
-
-            const tickets     = await getTickets(f.urn, region);
-            const statusFilter = args.status ?? 'all';
-
-            const mapped = tickets.map(t => ({
-                name:      t[QC.OName]?.[0]  ?? t[QC.Name]?.[0] ?? 'Unnamed',
-                priority:  t[QC.Priority]?.[0] ?? 'Unknown',
-                status:    t[QC.CloseDate]?.[0] ? 'closed' : 'open',
-                openDate:  t[QC.OpenDate]?.[0]  ?? null,
-                closeDate: t[QC.CloseDate]?.[0] ?? null,
-            }));
-
-            const filtered = statusFilter === 'all' ? mapped : mapped.filter(t => t.status === statusFilter);
-            filtered.sort((a, b) => (PRIORITY_ORDER[a.priority] ?? 99) - (PRIORITY_ORDER[b.priority] ?? 99));
-
-            return {
-                facilityName: f.name,
-                summary: {
-                    open:   mapped.filter(t => t.status === 'open').length,
-                    closed: mapped.filter(t => t.status === 'closed').length,
-                },
-                tickets: filtered,
-            };
-        }
-
-        case 'get_recent_activity': {
-            if (!f) return { error: `Facility not found: ${args.facility_urn}` };
-
-            const days  = Math.min(args.days ?? 30, 90);
-            const minTs = Date.now() - days * 24 * 60 * 60 * 1000;
-
-            const history = await getTwinHistory(f.urn, region, { min: minTs, includeChanges: true });
-            const events  = (history ?? []).filter(e => e.o !== 'metrics_update');
-
-            const actors  = new Set(events.map(e => e.u).filter(Boolean));
-            const byType  = {};
-            events.forEach(e => { byType[e.o] = (byType[e.o] ?? 0) + 1; });
-
-            return {
-                facilityName:       f.name,
-                daysRequested:      days,
-                totalChanges:       events.length,
-                uniqueContributors: actors.size,
-                changesByType:      byType,
-                recentChanges:      events.slice(0, 20).map(e => ({
-                    timestamp: new Date(e.t).toLocaleString(),
-                    operation: e.o,
-                    user:      e.u ?? 'unknown',
-                })),
-            };
-        }
-
-        case 'get_models': {
-            if (!f) return { error: `Facility not found: ${args.facility_urn}` };
-
-            const models = await getModels(f.urn, region);
-            return {
-                facilityName: f.name,
-                models: (models ?? []).map(m => ({
-                    name:      m.label ?? m.name ?? 'Unnamed',
-                    urn:       m.urn   ?? m.modelId ?? '',
-                    isDefault: m.isDefault ?? false,
-                })),
-            };
-        }
-
-        default:
-            return { error: `Unknown tool: ${name}` };
-    }
 }
 
 // ── LLM streaming — OpenAI ─────────────────────────────────────────────────────
@@ -418,15 +198,6 @@ function toAnthropicMessages(messages) {
 }
 
 async function* streamAnthropic(messages) {
-    // Always log settings state so we can diagnose MCP issues
-    console.log('[Chat] streamAnthropic settings:', {
-        provider: _settings.provider,
-        model:    _settings.model,
-        hasKey:   !!_settings.apiKey,
-        mcpURL:   _settings.mcpURL   || '(empty — MCP disabled)',
-        hasMcpToken: !!_settings.mcpToken,
-    });
-
     const body = {
         model:      _settings.model || 'claude-sonnet-5-5',
         system:     buildSystemPrompt(),
@@ -440,21 +211,19 @@ async function* streamAnthropic(messages) {
         stream:     true,
     };
 
-    // Attach Tandem MCP server when a URL is configured.
-    // Anthropic calls the MCP server server-side and exposes its tools to Claude
-    // alongside the built-in portfolio tools above.
-    // Uses a separate MCP token (mcp:read mcp:write scopes) if provided; the main
-    // Tandem session token won't have those scopes.
-    if (_settings.mcpURL) {
-        // Strip "Bearer " prefix if user pasted the full header value
-        const rawToken  = (_settings.mcpToken || window.sessionStorage.token || '').trim();
-        const mcpBearer = rawToken.replace(/^Bearer\s+/i, '');
+    // Anthropic's connector calls the Tandem MCP server on its side and exposes its tools
+    // alongside the portfolio tools. A bad/expired token makes Anthropic reject the whole
+    // request, so we retry once without MCP (see below).
+    const useMcp = mcpEnabled();
+    if (useMcp) {
         body.mcp_servers = [{
             type:                'url',
-            url:                 _settings.mcpURL,
-            name:                'tandem',
-            authorization_token: `Bearer ${mcpBearer}`,
+            url:                 MCP_URL,
+            name:                MCP_NAME,
+            authorization_token: _settings.mcpToken,   // raw token; the connector adds "Bearer"
         }];
+        // Without a toolset the connector exposes none of the server's tools to the model
+        body.tools.push({ type: 'mcp_toolset', mcp_server_name: MCP_NAME });
     }
 
     const headers = {
@@ -463,35 +232,38 @@ async function* streamAnthropic(messages) {
         'anthropic-dangerous-direct-browser-access': 'true',
         'Content-Type':                              'application/json',
     };
-    // MCP beta header — try current known values; if tools still don't appear, it may be GA (no header needed).
-    // Anthropic silently ignores mcp_servers if the header is unrecognized, which is why no error appears.
-    if (_settings.mcpURL) {
-        // Try the latest known beta slug; update this if Anthropic changes it.
-        headers['anthropic-beta'] = 'mcp-client-2025-04-04';
-    }
+    if (useMcp) headers['anthropic-beta'] = MCP_BETA;
 
-    // Debug: always log the full outbound body structure when MCP is configured
-    if (_settings.mcpURL) {
-        console.group('[Chat] Anthropic request body (MCP mode)');
-        console.log('model:', body.model);
-        console.log('mcp_servers field present:', !!body.mcp_servers);
-        console.log('mcp_servers:', JSON.stringify(body.mcp_servers?.map(s => ({ ...s, authorization_token: s.authorization_token ? '***' : '(empty!)' }))));
-        console.log('beta header sent:', headers['anthropic-beta'] ?? '(none)');
-        console.log('Tip — if Claude still reports no MCP tools, check Network tab →');
-        console.log('  Request payload: confirm mcp_servers is present');
-        console.log('  Response headers: look for anthropic-* warning headers');
-        console.groupEnd();
-    }
-
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+    const send = () => fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers,
         body: JSON.stringify(body),
     });
 
+    let response = await send();
+
+    // An MCP failure (bad/expired token, unapproved client) makes Anthropic reject the
+    // entire request. Fall back to the built-in portfolio tools instead of blocking chat.
+    if (!response.ok && useMcp && response.status === 400) {
+        const errBody = await response.clone().json().catch(() => null);
+        if (/mcp/i.test(errBody?.error?.message ?? '')) {
+            console.warn('[Chat] MCP server rejected — continuing without it:', errBody.error.message);
+            _mcpFailed = true;
+            delete body.mcp_servers;
+            body.tools = body.tools.filter(t => t.type !== 'mcp_toolset');
+            delete headers['anthropic-beta'];
+            body.system = buildSystemPrompt();   // no longer advertise MCP tools to the model
+            yield {
+                type: 'notice',
+                text: 'Tandem MCP authorization failed, so this answer uses the built-in portfolio tools only. Re-authorize in Settings to restore MCP.',
+            };
+            response = await send();
+        }
+    }
+
     if (!response.ok) {
-        const body = await response.json().catch(() => null);
-        const msg  = body?.error?.message ?? response.statusText;
+        const errJson = await response.json().catch(() => null);
+        const msg  = errJson?.error?.message ?? response.statusText;
         if (response.status === 401) throw new Error('Invalid Anthropic API key — check Settings.');
         if (response.status === 404) throw new Error(`Model "${_settings.model}" not found. Find valid IDs at ${PROVIDERS.anthropic.docsURL}`);
         if (response.status === 529) throw new Error('Anthropic is overloaded — wait a moment and try again.');
@@ -519,26 +291,17 @@ async function* streamAnthropic(messages) {
             let data;
             try { data = JSON.parse(line.slice(6).trim()); } catch { continue; }
 
-            // Debug: log every event when MCP is configured so we can see if
-            // Anthropic is connecting to the MCP server or silently ignoring it.
-            if (_settings.mcpURL && eventType && eventType !== 'ping') {
-                if (eventType === 'message_start') {
-                    console.group('[Chat] message_start — shows model + usage');
-                    console.log(JSON.stringify(data, null, 2));
-                    console.groupEnd();
-                } else if (eventType.includes('mcp') || eventType.includes('tool') || eventType.includes('server')) {
-                    console.group(`[Chat] *** MCP/tool event: ${eventType} ***`);
-                    console.log(JSON.stringify(data, null, 2));
-                    console.groupEnd();
-                } else if (eventType === 'content_block_start') {
-                    console.log(`[Chat] content_block_start type=${data?.content_block?.type}`);
-                } else {
-                    console.log(`[Chat] ${eventType}`);
-                }
-            }
-
             if (eventType === 'content_block_start') {
                 blocksByIdx[data.index] = { ...data.content_block, inputStr: '' };
+
+                // MCP tools run on Anthropic's side; show what is happening and surface failures
+                const cb = data.content_block;
+                if (cb?.type === 'mcp_tool_use') {
+                    yield { type: 'status', text: `Asking Tandem MCP: ${cb.name}…` };
+                } else if (cb?.type === 'mcp_tool_result' && cb.is_error) {
+                    console.warn('[Chat] MCP tool returned an error:', JSON.stringify(cb.content));
+                    yield { type: 'notice', text: 'A Tandem MCP tool call returned an error — see the browser console for details.' };
+                }
             }
 
             if (eventType === 'content_block_delta') {
@@ -576,28 +339,35 @@ function buildSystemPrompt() {
         ? _facilities.map(f => `  - ${f.name}`).join('\n')
         : `  (${_facilities.length} facilities — use list_facilities to enumerate them)`;
 
-    const mcpNote = _settings.mcpURL
-        ? `\nYou also have access to the Tandem MCP server (tool prefix: "tandem__"). ` +
-          `Use those tools to answer general questions about how Tandem works, its data model, ` +
-          `API capabilities, and concepts — things not covered by the portfolio tools above.`
+    const mcpNote = mcpEnabled()
+        ? `\nThe Tandem MCP server is connected: its tools are available to you alongside the portfolio tools. ` +
+          `For questions about how Tandem works, its data model, API, concepts or best practices, call the MCP tools ` +
+          `rather than answering from memory. If asked what tools you have, list both the portfolio tools and the MCP tools.`
         : '';
 
     return `You are an AI assistant embedded in the Tandem Portfolio Manager — a dashboard that helps facility managers monitor and analyze their portfolio of digital twin buildings on Autodesk Tandem.
 
 You have two sets of tools:
 
-1. **Portfolio tools** (built-in): query live data for the current account's facilities.
-   - list_facilities, get_stream_health, get_tickets, get_recent_activity, get_models
-   - Always use these for questions about specific facilities, streams, tickets, or activity.
+1. **Portfolio tools** (built-in, read-only): query live data for the user's Tandem accounts and facilities.
+   - Overview (cached, instant): list_facilities, find_outliers
+   - Accounts: list_accounts, get_account_metrics
+   - One facility: get_facility_details, get_models, get_facility_parameters, get_documents, get_saved_views, get_levels, get_rooms, get_systems, get_tagged_assets, get_stream_health, get_stream_values, chart_stream_values, get_tickets, get_recent_activity, get_facility_access
+   - Whole portfolio (scans every facility, slower): get_portfolio_activity, get_portfolio_tickets, get_portfolio_access
+   - Always use these for questions about specific facilities, streams, tickets, activity, access, rooms, levels or systems. Prefer the cheap overview tools first; call per-facility tools only for the facilities that matter, and avoid calling a per-facility tool for every facility when a portfolio-wide tool exists.
+   - Charts: show_chart (bar/line/pie/doughnut from numbers you already have), chart_stream_values (sensor time series).
+   - Tool results are summaries; if a result says it is truncated or capped, tell the user.
 
-2. **Tandem MCP tools** (tandem__* prefix, when available): access Tandem platform knowledge.
+2. **Tandem MCP tools** (from the connected Tandem MCP server, when available): access Tandem platform knowledge.
    - Use these for questions about how Tandem works, its concepts, API, or general best practices.${mcpNote}
 
 Rules:
 - Always use tools for accurate data; never guess facility names, stream counts, or ticket details.
 - Lead with the most important finding (problems, anomalies, outliers).
 - Highlight issues: offline streams, open high-priority tickets, no recent activity.
-- Use specific numbers. Format comparisons as lists or tables.
+- Use specific numbers. Format responses as GitHub-flavored markdown: use tables for comparisons across facilities, bullet lists for findings, **bold** for key values, and short headings for reports. Do not use images or raw HTML.
+- If a tool result contains a "warning" / "failedRequests", some data could not be loaded: say so plainly and never report those values as zero or "no activity".
+- When the user asks to see, plot, graph or chart something, call chart_stream_values (one stream's readings over time) or show_chart (bar/line/pie from numbers you already gathered). The chart appears directly in the chat — never write HTML, JavaScript or other chart code, and do not repeat the plotted numbers; add a short interpretation instead.
 - Keep responses concise — do not echo raw JSON back to the user.
 - Suggest actionable next steps when appropriate.
 
@@ -615,8 +385,10 @@ ${facilityList || '  (none loaded yet)'}`;
  * @param {string} userText
  * @param {function} onTextDelta - called with each streaming text chunk
  * @param {function} onToolStatus - called with status string (or null to clear)
+ * @param {function} onNotice - called with a non-fatal notice string (e.g. MCP fallback)
+ * @param {function} onChart - called with a chart spec a tool wants shown to the user
  */
-async function runAgentLoop(userText, onTextDelta, onToolStatus) {
+async function runAgentLoop(userText, onTextDelta, onToolStatus, onNotice, onChart) {
     _history.push({ role: 'user', content: userText });
 
     for (let iter = 0; iter < MAX_LOOP; iter++) {
@@ -633,6 +405,10 @@ async function runAgentLoop(userText, onTextDelta, onToolStatus) {
                 onTextDelta(event.delta);
             } else if (event.type === 'tool_call') {
                 toolCalls.push(event);
+            } else if (event.type === 'notice') {
+                onNotice?.(event.text);
+            } else if (event.type === 'status') {
+                onToolStatus(event.text);
             }
             // 'done' — just fall through
         }
@@ -662,7 +438,7 @@ async function runAgentLoop(userText, onTextDelta, onToolStatus) {
             let parsed = {};
             try { parsed = JSON.parse(tc.args || '{}'); } catch { /* ok */ }
             try {
-                const result = await executeTool(tc.name, parsed);
+                const result = await executeTool(tc.name, parsed, { onChart });
                 return { id: tc.id, result };
             } catch (err) {
                 return { id: tc.id, result: { error: err.message } };
@@ -694,12 +470,50 @@ function scrollToBottom() {
 function appendUserBubble(text) {
     const div = document.createElement('div');
     div.className = 'flex justify-end';
-    div.innerHTML = `
-        <div class="max-w-[75%] bg-tandem-blue text-white text-sm rounded-xl px-4 py-2.5 whitespace-pre-wrap break-words">
-            ${escHtml(text)}
-        </div>`;
+
+    // Build via textContent: whitespace-pre-wrap would otherwise preserve
+    // template-literal indentation as extra padding inside the bubble.
+    const bubble = document.createElement('div');
+    bubble.className = 'max-w-[75%] bg-tandem-blue text-white text-sm rounded-xl px-4 py-2.5 whitespace-pre-wrap break-words';
+    bubble.textContent = text;
+
+    div.appendChild(bubble);
     _messagesEl.appendChild(div);
     scrollToBottom();
+}
+
+const SVG_ATTRS = 'width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"';
+const ICON_COPY  = `<svg ${SVG_ATTRS}><rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6.5A2.5 2.5 0 0 0 13.5 4h-7A2.5 2.5 0 0 0 4 6.5v7A2.5 2.5 0 0 0 6.5 16H8"/></svg>`;
+const ICON_CHECK = `<svg ${SVG_ATTRS}><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>`;
+
+// ── Markdown rendering ─────────────────────────────────────────────────────────
+// Model output includes text from tickets/element names/MCP results, so HTML is
+// always sanitized with DOMPurify before insertion. Falls back to escaped plain
+// text if the libraries failed to load.
+let _purifyConfigured = false;
+
+function renderMarkdown(text) {
+    const { marked, DOMPurify } = window;
+    if (!marked || !DOMPurify) {
+        const d = document.createElement('div');
+        d.style.whiteSpace = 'pre-wrap';
+        d.textContent = text;
+        return d.outerHTML;
+    }
+    if (!_purifyConfigured) {
+        DOMPurify.addHook('afterSanitizeAttributes', node => {
+            if (node.tagName === 'A') {
+                node.setAttribute('target', '_blank');
+                node.setAttribute('rel', 'noopener noreferrer');
+            }
+        });
+        _purifyConfigured = true;
+    }
+    const html = marked.parse(text, { gfm: true, breaks: false, async: false });
+    const clean = DOMPurify.sanitize(html, { USE_PROFILES: { html: true }, FORBID_TAGS: ['style', 'form', 'input', 'img'] });
+    return clean
+        .replace(/<table/g, '<div class="table-wrap"><table')
+        .replace(/<\/table>/g, '</table></div>');
 }
 
 function appendAssistantBubble() {
@@ -710,43 +524,112 @@ function appendAssistantBubble() {
     bubble.className = 'max-w-[85%] bg-dark-card border border-dark-border text-dark-text text-sm rounded-xl px-4 py-2.5';
 
     const toolLine = document.createElement('div');
-    toolLine.className = 'hidden text-xs text-dark-text-secondary mb-1 italic';
+    toolLine.className = 'text-xs text-dark-text-secondary italic';
     toolLine.setAttribute('data-tool-status', '1');
+    toolLine.textContent = 'Thinking…';
     bubble.appendChild(toolLine);
 
+    // Charts drawn by tools sit between the status line and the written answer
+    const chartsEl = document.createElement('div');
+    bubble.appendChild(chartsEl);
+
     const textEl = document.createElement('div');
-    textEl.className = 'whitespace-pre-wrap break-words';
+    textEl.className = 'chat-md break-words';
     textEl.setAttribute('data-text', '1');
     bubble.appendChild(textEl);
+
+    const copyBtn = document.createElement('button');
+    copyBtn.type = 'button';
+    copyBtn.className = 'hidden mt-2 p-1 -ml-1 rounded text-dark-text-secondary hover:text-white hover:bg-dark-border transition';
+    copyBtn.title = 'Copy';
+    copyBtn.setAttribute('aria-label', 'Copy response');
+    copyBtn.innerHTML = ICON_COPY;   // static constant, no user content
+    copyBtn.addEventListener('click', async () => {
+        let ok = true;
+        try {
+            await navigator.clipboard.writeText(raw);
+        } catch {
+            ok = false;
+        }
+        copyBtn.innerHTML = ok ? ICON_CHECK : ICON_COPY;
+        copyBtn.title = ok ? 'Copied' : 'Copy failed';
+        setTimeout(() => { copyBtn.innerHTML = ICON_COPY; copyBtn.title = 'Copy'; }, 1500);
+    });
+    bubble.appendChild(copyBtn);
 
     wrap.appendChild(bubble);
     _messagesEl.appendChild(wrap);
     scrollToBottom();
 
+    let raw = '';
+    let renderQueued = false;
+    const renderNow = () => {
+        renderQueued = false;
+        textEl.innerHTML = renderMarkdown(raw);
+        scrollToBottom();
+    };
+
+    // The status line sits above the text with a gap only while both are visible.
+    const showStatus = (msg) => {
+        toolLine.textContent = msg;
+        toolLine.classList.remove('hidden');
+        toolLine.classList.toggle('mb-1', !!raw);
+    };
+
     return {
         appendText: (delta) => {
-            textEl.textContent += delta;
-            scrollToBottom();
+            if (!raw) toolLine.classList.add('hidden');
+            raw += delta;
+            if (!renderQueued) {
+                renderQueued = true;
+                requestAnimationFrame(renderNow);
+            }
         },
         setToolStatus: (msg) => {
             if (msg) {
-                toolLine.textContent = msg;
-                toolLine.classList.remove('hidden');
-            } else {
+                showStatus(msg);
+            } else if (raw) {
                 toolLine.classList.add('hidden');
+            } else {
+                showStatus('Thinking…');
             }
         },
-        getText: () => textEl.textContent,
+        appendChart: (spec) => {
+            const chart = renderChart(chartsEl, spec);
+            if (!chart) return;
+            _charts.push(chart);
+            bubble.style.width = '85%';   // charts need a real width, not shrink-to-fit
+            toolLine.classList.toggle('mb-1', true);
+            scrollToBottom();
+        },
+        hasText: () => !!raw || chartsEl.childElementCount > 0,
+        finish: () => {
+            renderNow();
+            if (raw) copyBtn.classList.remove('hidden');
+        },
+        remove: () => wrap.remove(),
+        insertNoticeBefore: (msg) => {
+            const note = document.createElement('div');
+            note.className = 'flex justify-start';
+            const inner = document.createElement('div');
+            inner.className = 'max-w-[85%] text-xs text-amber-400 border border-amber-800 bg-amber-950 rounded-lg px-3 py-1.5 break-words';
+            inner.textContent = `ℹ ${msg}`;
+            note.appendChild(inner);
+            wrap.before(note);
+            scrollToBottom();
+        },
     };
 }
 
 function appendErrorBubble(msg) {
     const div = document.createElement('div');
     div.className = 'flex justify-start';
-    div.innerHTML = `
-        <div class="max-w-[85%] border border-red-800 bg-red-950 text-red-300 text-sm rounded-xl px-4 py-2.5">
-            ⚠️ ${escHtml(msg)}
-        </div>`;
+
+    const bubble = document.createElement('div');
+    bubble.className = 'max-w-[85%] border border-red-800 bg-red-950 text-red-300 text-sm rounded-xl px-4 py-2.5 break-words';
+    bubble.textContent = `⚠️ ${msg}`;
+
+    div.appendChild(bubble);
     _messagesEl.appendChild(div);
     scrollToBottom();
 }
@@ -762,7 +645,9 @@ function appendWelcome() {
             <ul class="text-xs text-dark-text-secondary space-y-1 list-none">
                 ${[
                     'Which facility has the most offline streams?',
-                    'Summarize open tickets across all facilities.',
+                    'Show all open Critical and High priority tickets.',
+                    'Who has Owner access, and which facilities have no owner?',
+                    'Which facilities are outliers compared with the rest?',
                     'Which facilities had no activity in the last 30 days?',
                     'Compare stream health for my top 3 facilities.',
                     'What is a Tandem digital twin and how does it work?',
@@ -812,8 +697,19 @@ async function generateCodeChallenge(verifier) {
     return btoa(String.fromCharCode(...new Uint8Array(digest))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
 }
 
+// The Tandem MCP server uses its own authorization server, not the standard APS
+// /authentication/v2 endpoints. Discovered via:
+//   https://developer.api.autodesk.com/.well-known/oauth-protected-resource/tandem-mcp-server/v1/mcp
+//   https://developer.api.autodesk.com/.well-known/oauth-authorization-server/mcpauth
+const MCP_AUTHORIZE_URL = 'https://developer.api.autodesk.com/mcpauth/v1/authorize';
+const MCP_TOKEN_URL     = 'https://developer.api.autodesk.com/mcpauth/v1/token';
+
+function getMcpResource() {
+    return MCP_URL;
+}
+
 async function exchangeMcpCode(clientId, redirectUri, code, verifier) {
-    const resp = await fetch('https://developer.api.autodesk.com/authentication/v2/token', {
+    const resp = await fetch(MCP_TOKEN_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({
@@ -822,6 +718,7 @@ async function exchangeMcpCode(clientId, redirectUri, code, verifier) {
             redirect_uri:  redirectUri,
             code,
             code_verifier: verifier,
+            resource:      getMcpResource(),
         }),
     });
     if (!resp.ok) throw new Error(`Token exchange failed: ${await resp.text()}`);
@@ -835,9 +732,11 @@ async function exchangeMcpCode(clientId, redirectUri, code, verifier) {
  */
 async function authorizeMcp() {
     const clientId = _settings.mcpClientId;
-    if (!clientId) throw new Error('Enter the MCP Client ID in Settings first.');
+    if (!clientId) throw new Error('Enter the MCP Client ID first.');
 
-    const redirectUri = `${location.origin}${location.pathname.replace(/\/$/, '')}`;
+    // Static callback page; its URL must be registered as a callback on the APS app.
+    const basePath    = location.pathname.replace(/[^/]*$/, '');
+    const redirectUri = `${location.origin}${basePath}mcp-callback.html`;
     const verifier    = generateCodeVerifier();
     const challenge   = await generateCodeChallenge(verifier);
 
@@ -846,11 +745,12 @@ async function authorizeMcp() {
     sessionStorage.setItem('mcp-pkce-clientId', clientId);
     sessionStorage.setItem('mcp-pkce-redirectUri', redirectUri);
 
-    const authURL = new URL('https://developer.api.autodesk.com/authentication/v2/authorize');
+    const authURL = new URL(MCP_AUTHORIZE_URL);
     authURL.searchParams.set('response_type',         'code');
     authURL.searchParams.set('client_id',             clientId);
     authURL.searchParams.set('redirect_uri',          redirectUri);
     authURL.searchParams.set('scope',                 'mcp:read mcp:write offline_access');
+    authURL.searchParams.set('resource',              getMcpResource());
     authURL.searchParams.set('code_challenge',        challenge);
     authURL.searchParams.set('code_challenge_method', 'S256');
 
@@ -884,79 +784,71 @@ async function authorizeMcp() {
 }
 
 // ── Settings panel ─────────────────────────────────────────────────────────────
+const INPUT_CLS = 'w-full rounded border border-dark-border bg-dark-bg text-dark-text text-xs py-1.5 px-2 focus:outline-none focus:border-tandem-blue font-mono';
+
+function mcpStatusHtml(token) {
+    return token
+        ? '<span class="text-green-400">✓ Connected</span>'
+        : '<span class="text-dark-text-secondary">Not connected</span>';
+}
+
 function renderSettingsPane() {
     const prov = PROVIDERS[_settings.provider] ?? PROVIDERS.openai;
+    let mcpToken = _settings.mcpToken;   // working copy until Save
 
     _settingsPane.innerHTML = `
-        <div class="bg-dark-card border border-dark-border rounded-xl p-5 w-80 shadow-xl">
+        <div class="bg-dark-card border border-dark-border rounded-xl p-5 w-96 max-w-full shadow-xl">
             <h3 class="text-sm font-semibold text-dark-text mb-4">⚙ Chat Settings</h3>
 
             <label class="block text-xs text-dark-text-secondary mb-1">Provider</label>
-            <select id="chat-prov" class="w-full mb-3 rounded border border-dark-border bg-dark-bg text-dark-text text-xs py-1.5 px-2 focus:outline-none focus:border-tandem-blue">
+            <select id="chat-prov" class="${INPUT_CLS} mb-3 font-sans">
                 <option value="openai"    ${_settings.provider === 'openai'    ? 'selected' : ''}>OpenAI</option>
                 <option value="anthropic" ${_settings.provider === 'anthropic' ? 'selected' : ''}>Anthropic</option>
             </select>
 
-            <label class="block text-xs text-dark-text-secondary mb-1">Model ID</label>
+            <label class="block text-xs text-dark-text-secondary mb-1">Model</label>
             <datalist id="chat-model-list">
                 ${prov.models.map(m => `<option value="${m}">`).join('')}
             </datalist>
-            <input id="chat-model"
-                   type="text"
-                   list="chat-model-list"
+            <input id="chat-model" type="text" list="chat-model-list"
                    value="${escAttr(_settings.model || prov.defaultModel)}"
                    placeholder="e.g. ${escAttr(prov.defaultModel)}"
-                   class="w-full mb-1 rounded border border-dark-border bg-dark-bg text-dark-text text-xs py-1.5 px-2 focus:outline-none focus:border-tandem-blue font-mono"/>
-            <p class="text-xs text-dark-text-secondary mb-3" id="chat-model-hint">
-                Type any valid API model ID or pick from the suggestions.
+                   class="${INPUT_CLS} mb-1"/>
+            <p class="text-xs text-dark-text-secondary mb-3">
+                Pick a suggestion or type any model ID.
                 <a id="chat-model-docs" href="${escAttr(prov.docsURL)}" target="_blank" rel="noopener"
-                   class="text-tandem-blue hover:underline ml-1">Model reference ↗</a>
+                   class="text-tandem-blue hover:underline">Model list ↗</a>
             </p>
 
             <label class="block text-xs text-dark-text-secondary mb-1">API Key</label>
             <input id="chat-key" type="password" placeholder="Paste your API key…"
-                   value="${escAttr(_settings.apiKey)}"
-                   class="w-full mb-1 rounded border border-dark-border bg-dark-bg text-dark-text text-xs py-1.5 px-2 focus:outline-none focus:border-tandem-blue font-mono"/>
-            <p class="text-xs text-dark-text-secondary mb-4" id="chat-key-note">
-                Stored in your browser only. Sent directly to ${prov.label}.
-                ${_settings.provider === 'anthropic' ? '<br><span class="text-amber-400">Anthropic:</span> <code class="text-tandem-blue">anthropic-dangerous-direct-browser-access</code> header is set automatically to allow browser calls.' : ''}
+                   value="${escAttr(_settings.apiKey)}" class="${INPUT_CLS} mb-1"/>
+            <p class="text-xs text-dark-text-secondary mb-4">
+                Stored in this browser only and sent directly to <span id="chat-prov-label">${prov.label}</span>.
             </p>
 
-            <div class="border-t border-dark-border pt-3 mb-3">
-                <label class="block text-xs font-medium text-dark-text mb-1">
-                    Tandem MCP Server
-                    <span class="ml-1 font-normal text-dark-text-secondary">(optional)</span>
-                </label>
-                <input id="chat-mcp-url" type="text"
-                       placeholder="Paste MCP server URL here…"
-                       value="${escAttr(_settings.mcpURL)}"
-                       class="w-full mb-2 rounded border border-dark-border bg-dark-bg text-dark-text text-xs py-1.5 px-2 focus:outline-none focus:border-tandem-blue font-mono"/>
-
-                <label class="block text-xs text-dark-text-secondary mb-1">
-                    MCP Bearer Token
-                    <span class="ml-1 font-normal text-dark-text-secondary">(requires mcp:read mcp:write scopes)</span>
-                </label>
-                <label class="block text-xs text-dark-text-secondary mb-1 mt-2">MCP Client ID <span class="font-normal">(from your mcp.json auth.CLIENT_ID)</span></label>
-                <input id="chat-mcp-client-id" type="text"
-                       placeholder="e.g. uhHVfgeCmdH5Vs…"
-                       value="${escAttr(_settings.mcpClientId)}"
-                       class="w-full mb-2 rounded border border-dark-border bg-dark-bg text-dark-text text-xs py-1.5 px-2 focus:outline-none focus:border-tandem-blue font-mono"/>
-
-                <button id="chat-mcp-authorize"
-                        class="w-full mb-2 px-3 py-1.5 text-xs font-medium rounded border border-tandem-blue text-tandem-blue hover:bg-tandem-blue hover:text-white transition">
-                    🔑 Authorize MCP (opens popup)
-                </button>
-
-                <label class="block text-xs text-dark-text-secondary mb-1">MCP Bearer Token <span class="font-normal">(auto-filled by Authorize, or paste manually)</span></label>
-                <input id="chat-mcp-token" type="password"
-                       placeholder="Auto-filled after Authorize, or paste manually…"
-                       value="${escAttr(_settings.mcpToken)}"
-                       class="w-full rounded border border-dark-border bg-dark-bg text-dark-text text-xs py-1.5 px-2 focus:outline-none focus:border-tandem-blue font-mono"/>
-                <p id="chat-mcp-status" class="text-xs text-dark-text-secondary mt-1">
-                    Needs <code class="text-tandem-blue">mcp:read mcp:write</code> scopes — different from main Tandem login.
-                    Click <strong>Authorize MCP</strong> to get a token via OAuth, or paste one manually.<br>
-                    <span class="text-amber-400">Anthropic only</span> — OpenAI MCP requires a different API endpoint.
+            <div id="chat-mcp-section" class="border-t border-dark-border pt-3 mb-4 ${_settings.provider === 'anthropic' ? '' : 'hidden'}">
+                <div class="flex items-center justify-between mb-1">
+                    <span class="text-xs font-medium text-dark-text">Tandem MCP <span class="font-normal text-dark-text-secondary">(optional)</span></span>
+                    <span id="chat-mcp-status" class="text-xs">${mcpStatusHtml(mcpToken)}</span>
+                </div>
+                <p class="text-xs text-dark-text-secondary mb-2">
+                    Lets the assistant answer general Tandem questions. Needs the Client ID of an APS app with this page's
+                    <code class="text-tandem-blue">mcp-callback.html</code> registered as a callback.
                 </p>
+                <input id="chat-mcp-client-id" type="text" placeholder="MCP Client ID"
+                       value="${escAttr(_settings.mcpClientId)}" class="${INPUT_CLS} mb-2"/>
+                <div class="flex gap-2">
+                    <button id="chat-mcp-authorize"
+                            class="flex-1 px-3 py-1.5 text-xs font-medium rounded border border-tandem-blue text-tandem-blue hover:bg-tandem-blue hover:text-white transition">
+                        Authorize
+                    </button>
+                    <button id="chat-mcp-disconnect"
+                            class="px-3 py-1.5 text-xs font-medium rounded border border-dark-border text-dark-text-secondary hover:bg-dark-border transition ${mcpToken ? '' : 'hidden'}">
+                        Disconnect
+                    </button>
+                </div>
+                <p id="chat-mcp-msg" class="text-xs mt-1"></p>
             </div>
 
             <div class="flex gap-2">
@@ -971,62 +863,56 @@ function renderSettingsPane() {
             </div>
         </div>`;
 
-    // Provider change → update datalist suggestions and defaults
+    const setMcpToken = token => {
+        mcpToken = token;
+        getEl('chat-mcp-status').innerHTML = mcpStatusHtml(token);
+        getEl('chat-mcp-disconnect').classList.toggle('hidden', !token);
+    };
+
+    // Provider change → update model suggestions; MCP is Anthropic-only
     getEl('chat-prov').addEventListener('change', e => {
         const p = PROVIDERS[e.target.value] ?? PROVIDERS.openai;
-        const dl  = getEl('chat-model-list');
-        dl.innerHTML = p.models.map(m => `<option value="${m}">`).join('');
+        getEl('chat-model-list').innerHTML = p.models.map(m => `<option value="${m}">`).join('');
         const modelInput = getEl('chat-model');
-        modelInput.value = p.defaultModel;
+        modelInput.value       = p.defaultModel;
         modelInput.placeholder = `e.g. ${p.defaultModel}`;
-        getEl('chat-key-note').innerHTML =
-            `Stored in your browser only. Sent directly to ${p.label}.` +
-            (e.target.value === 'anthropic'
-                ? ' <br><span class="text-amber-400">Anthropic:</span> <code class="text-tandem-blue">anthropic-dangerous-direct-browser-access</code> header is set automatically to allow browser calls.'
-                : '');
-        const docsLink = getEl('chat-model-docs');
-        if (docsLink) { docsLink.href = p.docsURL; }
+        getEl('chat-prov-label').textContent = p.label;
+        getEl('chat-model-docs').href        = p.docsURL;
+        getEl('chat-mcp-section').classList.toggle('hidden', e.target.value !== 'anthropic');
     });
 
-    // Authorize MCP button → PKCE OAuth popup
     getEl('chat-mcp-authorize').addEventListener('click', async () => {
-        // Save the CLIENT_ID first so authorizeMcp() can read it
-        _settings.mcpClientId = getEl('chat-mcp-client-id')?.value.trim() ?? '';
-        const statusEl = getEl('chat-mcp-status');
-        const btn      = getEl('chat-mcp-authorize');
-        btn.disabled   = true;
-        btn.textContent = '⏳ Waiting for popup…';
-        if (statusEl) statusEl.innerHTML = '<span class="text-amber-400">OAuth popup opened — sign in and approve scopes…</span>';
+        _settings.mcpClientId = getEl('chat-mcp-client-id').value.trim();
+        const msgEl = getEl('chat-mcp-msg');
+        const btn   = getEl('chat-mcp-authorize');
+        btn.disabled    = true;
+        btn.textContent = 'Waiting for popup…';
+        msgEl.innerHTML = '<span class="text-amber-400">Sign in and approve access in the popup…</span>';
         try {
-            const token = await authorizeMcp();
-            getEl('chat-mcp-token').value = token;
-            if (statusEl) statusEl.innerHTML = '<span class="text-green-400">✓ Token obtained successfully! Click Save.</span>';
+            setMcpToken(await authorizeMcp());
+            msgEl.innerHTML = '<span class="text-green-400">Token obtained — click Save.</span>';
         } catch (err) {
-            if (statusEl) statusEl.innerHTML = `<span class="text-red-400">⚠ ${escHtml(err.message)}</span>`;
+            msgEl.innerHTML = `<span class="text-red-400">${escHtml(err.message)}</span>`;
         } finally {
             btn.disabled    = false;
-            btn.textContent = '🔑 Authorize MCP (opens popup)';
+            btn.textContent = 'Authorize';
         }
     });
 
+    getEl('chat-mcp-disconnect').addEventListener('click', () => {
+        setMcpToken('');
+        getEl('chat-mcp-msg').innerHTML = '<span class="text-dark-text-secondary">Click Save to apply.</span>';
+    });
+
     getEl('chat-settings-save').addEventListener('click', () => {
-        _settings.provider = getEl('chat-prov')?.value ?? _settings.provider;
-        _settings.model    = getEl('chat-model')?.value.trim() ?? _settings.model;
-        _settings.apiKey   = getEl('chat-key')?.value.trim() ?? _settings.apiKey;
-        _settings.mcpURL      = getEl('chat-mcp-url')?.value.trim()       ?? '';
-        _settings.mcpClientId = getEl('chat-mcp-client-id')?.value.trim() ?? '';
-        _settings.mcpToken    = getEl('chat-mcp-token')?.value.trim()     ?? '';
-        // Debug: confirm what's being saved
-        console.log('[Chat] Saving settings:', {
-            provider: _settings.provider,
-            model:    _settings.model,
-            hasKey:   !!_settings.apiKey,
-            mcpURL:   _settings.mcpURL   || '(empty)',
-            hasMcpToken: !!_settings.mcpToken,
-        });
+        _settings.provider    = getEl('chat-prov').value;
+        _settings.model       = getEl('chat-model').value.trim() || PROVIDERS[_settings.provider].defaultModel;
+        _settings.apiKey      = getEl('chat-key').value.trim();
+        _settings.mcpClientId = getEl('chat-mcp-client-id').value.trim();
+        _settings.mcpToken    = mcpToken;
         saveSettings();
+        _mcpFailed = false;   // settings changed — give MCP another chance
         toggleSettings(false);
-        // Clear no-key banner if key was just added
         if (_settings.apiKey) getEl('chat-no-key')?.remove();
     });
 
@@ -1065,13 +951,18 @@ async function submitMessage(text) {
             text,
             delta => bubble.appendText(delta),
             msg   => bubble.setToolStatus(msg),
+            note  => bubble.insertNoticeBefore(note),
+            spec  => bubble.appendChart(spec),
         );
     } catch (err) {
         console.error('Chat error:', err);
+        // Drop the empty "Thinking…" bubble; keep it only if a partial answer streamed in
+        if (!bubble.hasText()) bubble.remove();
         appendErrorBubble(err.message || 'An error occurred. Check your API key in Settings.');
         // Roll back the last user message so history stays consistent
         if (_history.at(-1)?.role === 'user') _history.pop();
     } finally {
+        bubble.finish();
         setThinking(false);
     }
 }
@@ -1081,11 +972,15 @@ async function submitMessage(text) {
 /**
  * Reset state and render placeholder. Called when account changes.
  */
-export function render(facilities, regionMap, accountName) {
+export function render(facilities, regionMap, accountName, accounts) {
     _facilities  = facilities ?? [];
     _regionMap   = regionMap  ?? null;
     _accountName = accountName ?? '';
+    _accounts    = accounts   ?? [];
+    setToolContext({ facilities: _facilities, regionMap: _regionMap, accounts: _accounts, accountName: _accountName });
     _history     = [];
+    _charts.forEach(c => c.destroy());
+    _charts      = [];
     _loaded      = false;
     _settings = loadSettings();   // reload from localStorage on every account switch
 

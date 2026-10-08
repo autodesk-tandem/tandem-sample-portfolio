@@ -1,7 +1,7 @@
 # Security Spec
 
 > **Status:** Implemented — reflects built state as of 2026-10-05  
-> **Last updated:** 2026-10-05
+> **Last updated:** 2026-10-08
 
 ---
 
@@ -25,8 +25,9 @@ instead of showing zeros or crashing).
 ## Data Sensitivity
 
 This app reads Tandem facility metadata, stream counts, asset counts, model counts, and usage
-metrics. It does not read raw sensor values, personal data beyond the authenticated user's
-profile image, or any data the user couldn't see in Tandem itself.
+metrics. It does not read personal data beyond the authenticated user's profile image, or any data
+the user couldn't see in Tandem itself. The AI Chat tab additionally reads stream values, tickets,
+history and access lists on demand (see below).
 
 ## Deeplink / Punch-out Security
 
@@ -44,6 +45,27 @@ profile image, or any data the user couldn't see in Tandem itself.
 - This cookie is **never set on GitHub Pages** — `SameSite=Lax` prevents cross-origin writes,
   and the receiving origin cannot read it anyway
 - The cookie is read once and immediately cleared
+
+## AI Chat
+
+- **LLM API key:** supplied by the user, stored in `localStorage` (`tandem-chat-settings`), never in
+  source or logs. It is sent directly from the browser to OpenAI/Anthropic. Anyone with access to the
+  browser profile (or an XSS bug) could read it — use a restricted/low-limit key
+- **Data sent to the LLM provider:** tool results (facility names, counts, ticket titles, stream
+  values, history, access summaries) leave the browser for the chosen provider. User IDs and document
+  links are stripped before results go to the model. Users should only enable the tab if that is
+  acceptable for their data
+- **Read-only tools:** the built-in tools never write to Tandem
+- **Output sanitization:** model output is rendered with `marked` then sanitized with `DOMPurify`
+  (style/form/input/img forbidden; links forced to `rel=noopener noreferrer`). Chart specs are
+  validated and clamped before drawing
+- **Tandem MCP (optional):** the MCP access token (`mcp:read mcp:write`, separate from the main Tandem
+  session token) is stored in `localStorage` and sent to Anthropic, which calls the Tandem MCP server
+  on our behalf. The MCP server also exposes write tools (create/update/delete); the server's tool
+  descriptions ask for confirmation of destructive actions, but the app does not enforce it. Disconnect in
+  Settings clears the token. Tokens are short-lived; on expiry chat falls back to built-in tools
+- **Callback page:** `mcp-callback.html` only displays/relays the OAuth `code`; PKCE verifier is kept
+  in `sessionStorage`
 
 ## Known Constraints
 
@@ -63,3 +85,5 @@ This is a sample/prototype app. The realistic threats for its audience:
 | CSRF | PKCE state parameter; no server-side session |
 | Phishing via deeplink | Hash params carry only account name + URN (not tokens); harmless if intercepted |
 | Unauthorized data access | Tandem API enforces authorization; 403s handled gracefully |
+| Prompt injection via facility data (ticket/asset names) | Built-in tools are read-only; output sanitized; MCP write tools are the residual risk — authorize MCP only when needed |
+| LLM key theft | Key only in `localStorage`; sanitized rendering limits XSS; recommend a restricted key |
