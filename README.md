@@ -22,7 +22,7 @@ using the same Tandem REST API, OAuth PKCE pattern, and visual design language.
 | **Portfolio** | Card grid of all facilities in the selected account. Shows stream counts, tagged asset counts, and facility thumbnails. Toggle to a **leaderboard view** to rank by Streams, Tagged Assets, or Template. Account-level usage totals shown in a metrics banner. |
 | **Map** | Interactive Leaflet map with facility pins. Set locations for unlocated facilities by address (geocoded via OpenStreetMap) or by clicking the map. |
 | **Access** | D3 force-directed graph showing which users and applications have access to which facilities. |
-| **Compare** | Select up to 6 facilities for a side-by-side metrics table. Outlier cells are automatically highlighted (±1.5σ from the account average). A portfolio-wide outlier panel surfaces any facility that stands out significantly. |
+| **Compare** | Select up to 6 facilities for a side-by-side metrics table (models, streams, tagged assets, open tickets) plus a radar/bar chart view. Outlier cells are automatically highlighted (±1.5σ from the account average). A portfolio-wide outlier panel surfaces any facility that stands out significantly. |
 | **Activity** | Cross-facility activity feed. Each facility row shows stream health and open ticket count. Click a row for a 30-day summary (facility changes, contributors, stream health, model changes) with an "Open in Stats" punch-out. |
 | **Tickets** | Portfolio-wide work order summary. Ranks facilities by open ticket count. Click to drill down into per-ticket details with priority filters and sort controls. |
 | **Accounts** | Cross-account leaderboard ranked by 7 metrics: Facilities, Models, Streams, Assets, Connections, Elements, and Storage. |

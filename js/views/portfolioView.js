@@ -66,6 +66,10 @@ export function setRetryStatsCallback(fn) { _onRetryStats = fn; }
 /** Read-only access to the stats store for other views (e.g. ticketsView, activityView) */
 export function getStatsStore() { return statsStore; }
 
+// URNs whose stats load failed or timed out (no entry in statsStore) — lets other tabs show an error, not "loading"
+const failedStats = new Set();
+export function getFailedStats() { return failedStats; }
+
 const grid        = document.getElementById('facilityGrid');
 const loadMoreBtn = document.getElementById('loadMoreBtn');
 const loadMoreCtr = document.getElementById('loadMoreContainer');
@@ -152,6 +156,7 @@ export function render(facilities, regionMap) {
     renderedCount     = 0;
     filterState       = { search: '', regions: new Set(), tags: new Set() };
     statsStore.clear();
+    failedStats.clear();
 
     cleanupThumbnailURLs();
     grid.innerHTML = '';
@@ -782,13 +787,17 @@ export function updateCardStats(urn, stats) {
     // templateName comes from loadFacilityData (async, may not have run yet).
     // If it's already in the cache, great. If not, loadFacilityData will back-patch
     // statsStore once it completes (see the setCachedSummary block in loadFacilityData).
-    if (!stats.error) {
+    if (stats.error) {
+        failedStats.add(urn);
+    } else {
+        failedStats.delete(urn);
         const cached = getCachedSummary(urn);
         statsStore.set(urn, {
             streamCount:      stats.streamCount      ?? 0,
             taggedAssetCount: stats.taggedAssetCount ?? 0,
             openTicketCount:  stats.openTicketCount  ?? 0,
             closedTicketCount: stats.closedTicketCount ?? 0,
+            ticketsError:     !!stats.ticketsError,
             templateName:     cached?.templateName   ?? null,
         });
     }

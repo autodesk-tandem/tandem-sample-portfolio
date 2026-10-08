@@ -11,7 +11,7 @@
  */
 
 import { getTickets } from '../api.js';
-import { getStatsStore } from './portfolioView.js';
+import { getStatsStore, getFailedStats } from './portfolioView.js';
 import { QC } from '../../tandem/constants.js';
 
 // ── Priority config ────────────────────────────────────────────────────────────
@@ -36,6 +36,9 @@ let _regionMap     = null;
 let _loaded        = false;
 let _sortKey       = 'open';     // 'open' | 'critical' | 'total'
 let _openFacility  = null;
+
+let _onRetry = null;
+export function setRetryCallback(fn) { _onRetry = fn; }
 
 // ── Public API ─────────────────────────────────────────────────────────────────
 
@@ -82,11 +85,13 @@ function renderSummary() {
     const wrap = document.getElementById('ticketsContent');
     if (!wrap) return;
 
-    const store = getStatsStore();
+    const store  = getStatsStore();
+    const failed = getFailedStats();
     // Build rows — only include facilities that have stats loaded
     const rows = _facilities.map(f => {
         const s = store.get(f.urn);
         return {
+            failed: failed.has(f.urn) || !!s?.ticketsError,
             urn:    f.urn,
             name:   f.name,
             region: _regionMap?.get(f.urn) ?? f.region ?? 'us',
@@ -99,11 +104,12 @@ function renderSummary() {
     const sorted = sortRows(rows, _sortKey);
 
     // Banner totals
-    const loaded    = rows.filter(r => r.open !== null);
+    const failedRows = rows.filter(r => r.failed);
+    const loaded    = rows.filter(r => r.open !== null && !r.failed);
     const totalOpen = loaded.reduce((s, r) => s + r.open, 0);
     const withOpen  = loaded.filter(r => r.open > 0).length;
     const noTickets = loaded.filter(r => r.open === 0 && r.closed === 0).length;
-    const pending   = rows.length - loaded.length;
+    const pending   = rows.length - loaded.length - failedRows.length;
 
     wrap.innerHTML = `
         <div class="flex gap-0" style="height:calc(100vh - 190px);min-height:500px">
@@ -116,6 +122,8 @@ function renderSummary() {
                     <span>${ICON_TICKET} <b class="text-dark-text">${totalOpen}</b> open tickets across <b class="text-dark-text">${withOpen}</b> facilit${withOpen !== 1 ? 'ies' : 'y'}</span>
                     ${noTickets ? `<span class="opacity-60">${noTickets} with no tickets</span>` : ''}
                     ${pending   ? `<span class="opacity-60">${pending} still loading…</span>` : ''}
+                    ${failedRows.length ? `<span class="text-red-400">${failedRows.length} failed to load
+                        <button id="tickets-retry-all" class="ml-1 underline text-tandem-blue hover:text-blue-400">Retry</button></span>` : ''}
 
                     <!-- Sort controls -->
                     <div class="ml-auto flex items-center gap-2">
@@ -164,6 +172,19 @@ function renderSummary() {
     // Refresh button
     wrap.querySelector('#tickets-refresh-btn')?.addEventListener('click', () => renderSummary());
 
+    // Retry (all failed / single row)
+    const retry = urns => {
+        urns.forEach(u => getFailedStats().delete(u));
+        const s = getStatsStore();
+        urns.forEach(u => { const e = s.get(u); if (e?.ticketsError) s.delete(u); });
+        renderSummary();
+        urns.forEach(u => _onRetry?.(u));
+    };
+    wrap.querySelector('#tickets-retry-all')?.addEventListener('click', () => retry(failedRows.map(r => r.urn)));
+    wrap.querySelectorAll('[data-tickets-retry]').forEach(btn => {
+        btn.addEventListener('click', e => { e.stopPropagation(); retry([btn.dataset.ticketsRetry]); });
+    });
+
     // Row clicks
     wrap.querySelectorAll('[data-tickets-urn]').forEach(row => {
         row.addEventListener('click', () => {
@@ -200,11 +221,16 @@ function sortRows(rows, key) {
 }
 
 function facilityRow(r) {
-    const isLoading = r.open === null;
+    const isLoading = r.open === null && !r.failed;
     const total     = (r.open ?? 0) + (r.closed ?? 0);
     const hasTickets = total > 0;
 
-    const openChip = r.open > 0
+    const failedChip = r.failed
+        ? `<span class="text-xs text-red-400">Couldn't load tickets</span>
+           <button class="text-xs text-tandem-blue hover:underline" data-tickets-retry="${esc(r.urn)}">Retry</button>`
+        : '';
+
+    const openChip = r.failed ? '' : r.open > 0
         ? `<span class="px-1.5 py-0.5 rounded text-xs font-medium" style="background:#78350f22;color:#fb923c;border:1px solid #78350f66">${ICON_TICKET} ${r.open} open</span>`
         : r.open === 0
             ? `<span class="text-xs text-dark-text-secondary opacity-40">No open tickets</span>`
@@ -225,7 +251,7 @@ function facilityRow(r) {
              data-tickets-name="${esc(r.name)}">
             <!-- Indicator dot -->
             <div class="w-2.5 h-2.5 rounded-full shrink-0"
-                 style="background:${r.open > 0 ? '#fb923c' : r.open === 0 ? '#10B981' : '#6B7280'}"></div>
+                 style="background:${r.failed ? '#f87171' : r.open > 0 ? '#fb923c' : r.open === 0 ? '#10B981' : '#6B7280'}"></div>
 
             <!-- Name -->
             <div class="flex-1 min-w-0">
@@ -235,7 +261,7 @@ function facilityRow(r) {
 
             <!-- Chips -->
             <div class="flex items-center gap-1.5 shrink-0">
-                ${loadingChip}${openChip}${closedChip}
+                ${loadingChip}${failedChip}${openChip}${closedChip}
             </div>
 
             <!-- Chevron -->
