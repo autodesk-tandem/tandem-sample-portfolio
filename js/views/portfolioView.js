@@ -44,6 +44,11 @@ const ICON_ASSETS = `<svg class="w-3.5 h-3.5 inline-block shrink-0 align-middle"
     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
           d="M7 7h10M7 12h6m-6 5h4M5 3h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z"/>
 </svg>`;
+const ICON_ALERTS = `<svg class="w-4 h-4 inline-block shrink-0 align-middle" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path stroke-linejoin="round" stroke-width="2" d="M10.27 3.86a2 2 0 013.46 0l8.2 14.2A2 2 0 0120.2 21H3.8a2 2 0 01-1.73-2.94l8.2-14.2z"/>
+    <path stroke-linecap="round" stroke-width="2" d="M12 8v5"/>
+    <circle cx="12" cy="16.5" r="1"/>
+</svg>`;
 // Template: document with a small star/badge — "schema / spec" feel
 const ICON_TEMPLATE = `<svg class="w-3.5 h-3.5 inline-block shrink-0 align-middle" fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -763,6 +768,7 @@ function populateCard(card, summary) {
             <span>${ICON_MODELS} <span class="text-dark-text font-medium">${summary.modelCount}</span> models</span>
             <span class="stat-streams">${ICON_STREAMS} <span class="text-dark-text font-medium">–</span></span>
             <span class="stat-assets">${ICON_ASSETS} <span class="text-dark-text font-medium">–</span></span>
+            <span class="stat-alerts">${ICON_ALERTS} <span class="text-dark-text font-medium">–</span></span>
 `;
     }
 
@@ -798,6 +804,7 @@ export function updateCardStats(urn, stats) {
             openTicketCount:  stats.openTicketCount  ?? 0,
             closedTicketCount: stats.closedTicketCount ?? 0,
             ticketsError:     !!stats.ticketsError,
+            streamAlertsCount: stats.streamAlertsCount ?? 0,
             templateName:     cached?.templateName   ?? null,
         });
     }
@@ -822,6 +829,10 @@ export function updateCardStats(urn, stats) {
             const assetsEl = card.querySelector('.stat-assets');
             if (assetsEl) {
                 assetsEl.innerHTML = `${ICON_ASSETS} <span class="text-dark-text font-medium">${stats.taggedAssetCount}</span> assets`;
+            }
+            const alertsEl = card.querySelector('.stat-alerts');
+            if (alertsEl) {
+                alertsEl.innerHTML = `${ICON_ALERTS} <span class="text-dark-text font-medium">${stats.streamAlertsCount}</span> alerts`;
             }
         }
     }
