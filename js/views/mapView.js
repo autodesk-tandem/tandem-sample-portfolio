@@ -17,6 +17,7 @@
 import { getLocation, setLocation, removeLocation } from '../state/locationStore.js';
 import { getCachedSummary } from '../state/facilityCache.js';
 import { getEnv } from '../config.js';
+import { ICON_EXTERNAL_LINK } from './icons.js';
 
 let map          = null;       // Leaflet map instance (created once)
 let markers      = new Map();  // facilityURN → confirmed Leaflet marker
@@ -136,12 +137,6 @@ function buildPopup(facility) {
     const googleUrl = loc ? `https://www.google.com/maps?q=${loc.lat},${loc.lng}` : null;
     const appleUrl  = loc ? `https://maps.apple.com/?ll=${loc.lat},${loc.lng}&q=${encodeURIComponent(facility.name)}` : null;
 
-    // Reusable external-link SVG (matches the card footer icon)
-    const extIcon = `<svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2"
-        stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
-        <path d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
-    </svg>`;
-
     const linkStyle = 'display:inline-flex;align-items:center;gap:4px;font-size:12px;color:#3b82f6;text-decoration:none;';
     const hoverAttrs = `onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'"`;
 
@@ -166,17 +161,17 @@ function buildPopup(facility) {
             <a href="${tandemUrl}" target="_blank" rel="noopener" style="${linkStyle}" ${hoverAttrs}>
                 <img src="https://tandem.autodesk.com/favicon.ico" width="13" height="13"
                      style="border-radius:2px;" alt="">
-                Open in Tandem ${extIcon}
+                Open in Tandem ${ICON_EXTERNAL_LINK}
             </a>
             ${googleUrl ? `<a href="${googleUrl}" target="_blank" rel="noopener" style="${linkStyle}" ${hoverAttrs}>
                 <img src="https://maps.google.com/favicon.ico" width="13" height="13"
                      style="border-radius:2px;" alt="">
-                Google Maps ${extIcon}
+                Google Maps ${ICON_EXTERNAL_LINK}
             </a>` : ''}
             ${appleUrl ? `<a href="${appleUrl}" target="_blank" rel="noopener" style="${linkStyle}" ${hoverAttrs}>
                 <img src="https://maps.apple.com/favicon.ico" width="13" height="13"
                      style="border-radius:2px;" alt="">
-                Apple Maps ${extIcon}
+                Apple Maps ${ICON_EXTERNAL_LINK}
             </a>` : ''}
         </div>
 
