@@ -17,8 +17,7 @@
  *           getLastSeenStreamValues, getModels, getHistory
  */
 
-const ICON_STREAMS = `<svg class="w-3 h-3 inline-block shrink-0 align-middle" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12h2l3-7 4 14 3-8 2 1h4"/></svg>`;
-
+import { ICON_EXTERNAL_LINK, ICON_STREAMS, ICON_TICKET } from './icons.js';
 import {
     getTwinHistory,
     getStreams,
@@ -439,11 +438,6 @@ function buildStreamChip(sh) {
     return parts.join('');
 }
 
-const ICON_TICKET = `<svg class="w-3 h-3 inline-block shrink-0 align-middle" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-          d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z"/>
-</svg>`;
-
 function buildTicketChip(stats) {
     if (!stats) return '';   // stats not loaded yet
     const open = stats.openTicketCount ?? 0;
@@ -456,11 +450,6 @@ function buildTicketChip(stats) {
 // ── Drill-down panel ───────────────────────────────────────────────────────────
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
-
-const EXT_ICON = `<svg class="w-3 h-3 inline-block" fill="none" stroke="currentColor" stroke-width="2"
-    stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
-    <path d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
-</svg>`;
 
 async function openDrillDown(result) {
     _openFacility = result.urn;
@@ -541,7 +530,7 @@ async function openDrillDown(result) {
                 <p class="text-xs text-dark-text-secondary mb-2">For full history and details:</p>
                 <button id="activity-open-stats-btn"
                         class="inline-flex items-center gap-1.5 text-xs text-tandem-blue hover:underline font-medium">
-                    Open in Stats ${EXT_ICON}
+                    Open in Stats ${ICON_EXTERNAL_LINK}
                 </button>
             </div>
         </div>`;

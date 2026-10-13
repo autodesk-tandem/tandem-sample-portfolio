@@ -11,7 +11,7 @@
 
 import { getFacilityThumbnail, getFacilityInfo, getInlineTemplate, cleanupThumbnailURLs } from '../api.js';
 import { getCachedSummary, setCachedSummary } from '../state/facilityCache.js';
-import { ICON_ALERTS, ICON_ASSETS, ICON_MODELS, ICON_STREAMS, ICON_TEMPLATE } from './icons.js';
+import { ICON_ALERTS, ICON_ASSETS, ICON_EXTERNAL_LINK, ICON_MODELS, ICON_STREAMS, ICON_TEMPLATE } from './icons.js';
 import { getEnv } from '../config.js';
 
 const PAGE_SIZE = 50;
@@ -452,11 +452,6 @@ function renderLeaderboard() {
             ? 'bg-tandem-blue text-white'
             : 'border border-dark-border text-dark-text-secondary hover:text-dark-text bg-dark-bg'}`;
 
-    const extIcon = `<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-              d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
-    </svg>`;
-
     leaderboardContainer.innerHTML = `
         <!-- Sort picker -->
         <div class="flex items-center gap-2 mb-4">
@@ -508,11 +503,11 @@ function renderLeaderboard() {
                             <div class="flex items-center gap-3 shrink-0 opacity-0 group-hover:opacity-100 transition">
                                 <button data-view-details="${escapeHtml(row.urn)}"
                                         class="inline-flex items-center gap-1 text-xs text-tandem-blue hover:underline transition">
-                                    Stats ${extIcon}
+                                    Stats ${ICON_EXTERNAL_LINK}
                                 </button>
                                 <a href="${tandemFacilityURL(row.urn)}" target="_blank" rel="noopener"
                                    class="inline-flex items-center gap-1 text-xs text-tandem-blue hover:underline transition">
-                                    Tandem ${extIcon}
+                                    Tandem ${ICON_EXTERNAL_LINK}
                                 </a>
                             </div>
                         </div>`;
@@ -558,11 +553,11 @@ function renderLeaderboard() {
                             <div class="flex items-center gap-3 shrink-0 opacity-0 group-hover:opacity-100 transition pl-2">
                                 <button data-view-details="${escapeHtml(row.urn)}"
                                         class="inline-flex items-center gap-1 text-xs text-tandem-blue hover:underline transition">
-                                    Stats ${extIcon}
+                                    Stats ${ICON_EXTERNAL_LINK}
                                 </button>
                                 <a href="${tandemFacilityURL(row.urn)}" target="_blank" rel="noopener"
                                    class="inline-flex items-center gap-1 text-xs text-tandem-blue hover:underline transition">
-                                    Tandem ${extIcon}
+                                    Tandem ${ICON_EXTERNAL_LINK}
                                 </a>
                             </div>
                         </div>`;
@@ -662,19 +657,13 @@ function createSkeletonCard(facility) {
                 <button data-view-details="${escapeHtml(facility.urn)}"
                         class="inline-flex items-center gap-1 text-xs text-tandem-blue hover:underline transition">
                     Open in Stats
-                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                              d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
-                    </svg>
+                    ${ICON_EXTERNAL_LINK}
                 </button>
                 <a href="${tandemFacilityURL(facility.urn)}"
                    target="_blank" rel="noopener"
                    class="inline-flex items-center gap-1 text-xs text-tandem-blue hover:underline transition">
                     Open in Tandem
-                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                              d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
-                    </svg>
+                    ${ICON_EXTERNAL_LINK}
                 </a>
             </div>
         </div>`;

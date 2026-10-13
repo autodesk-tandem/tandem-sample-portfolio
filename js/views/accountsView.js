@@ -10,47 +10,7 @@
  */
 
 import { getGroupMetrics } from '../api.js';
-
-// ── Icons (reuse same style as portfolioView) ─────────────────────────────────
-const ICON_FACILITIES = `<svg class="w-3.5 h-3.5 inline-block shrink-0 align-middle" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-          d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>
-    <polyline stroke-linecap="round" stroke-linejoin="round" stroke-width="2" points="9 22 9 12 15 12 15 22"/>
-</svg>`;
-
-const ICON_MODELS = `<svg class="w-3.5 h-3.5 inline-block shrink-0 align-middle" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-          d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/>
-    <polyline stroke-linecap="round" stroke-linejoin="round" stroke-width="2" points="3.27 6.96 12 12.01 20.73 6.96"/>
-    <line stroke-linecap="round" stroke-linejoin="round" stroke-width="2" x1="12" y1="22.08" x2="12" y2="12"/>
-</svg>`;
-
-const ICON_ELEMENTS = `<svg class="w-3.5 h-3.5 inline-block shrink-0 align-middle" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-          d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
-</svg>`;
-
-const ICON_ASSETS = `<svg class="w-3.5 h-3.5 inline-block shrink-0 align-middle" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-          d="M7 7h10M7 12h6m-6 5h4M5 3h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z"/>
-</svg>`;
-
-const ICON_STREAMS = `<svg class="w-3.5 h-3.5 inline-block shrink-0 align-middle" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12h2l3-7 4 14 3-8 2 1h4"/>
-</svg>`;
-
-const ICON_CONNECTIONS = `<svg class="w-3.5 h-3.5 inline-block shrink-0 align-middle" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <circle cx="6" cy="6" r="2" stroke-width="2"/>
-    <circle cx="18" cy="18" r="2" stroke-width="2"/>
-    <circle cx="18" cy="6" r="2" stroke-width="2"/>
-    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 6h8M6 8v8M18 8v8M8 18h8"/>
-</svg>`;
-
-const ICON_STORAGE = `<svg class="w-3.5 h-3.5 inline-block shrink-0 align-middle" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <ellipse cx="12" cy="5" rx="9" ry="3" stroke-width="2"/>
-    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5v6c0 1.66 4.03 3 9 3s9-1.34 9-3V5"/>
-    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 11v6c0 1.66 4.03 3 9 3s9-1.34 9-3v-6"/>
-</svg>`;
+import { ICON_ASSETS,ICON_CONNECTIONS, ICON_ELEMENTS, ICON_FACILITIES, ICON_MODELS, ICON_STORAGE, ICON_STREAMS } from './icons.js';
 
 // ── State ─────────────────────────────────────────────────────────────────────
 let _accounts       = [];   // Array<{ id, name, facilityCount }>
@@ -155,11 +115,6 @@ function renderLeaderboard() {
         `inline-flex items-center gap-1.5 px-3 py-1 text-xs rounded transition ${_metric === key
             ? 'bg-tandem-blue text-white'
             : 'border border-dark-border text-dark-text-secondary hover:text-dark-text bg-dark-bg'}`;
-
-    const extIcon = `<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-              d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
-    </svg>`;
 
     wrap.innerHTML = `
         <!-- Sort picker -->
