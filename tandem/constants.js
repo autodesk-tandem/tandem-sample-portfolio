@@ -200,3 +200,8 @@ export const HC = {
    Timestamp: 't',
    Username: 'n'
 };
+
+export const StreamStateBitmapMask = {
+    WARN: 0b00001,
+    ALERT: 0b00010
+};

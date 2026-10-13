@@ -7,32 +7,13 @@
  */
 
 import { getCachedSummary } from '../state/facilityCache.js';
+import { ICON_ALERTS, ICON_ASSETS, ICON_MODELS, ICON_STREAMS, ICON_TICKET } from './icons.js';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const MAX_SELECTED     = 6;
 const OUTLIER_SIGMA    = 1.5; // standard deviations to flag as outlier
 const REGION_LABELS    = { us: 'USA', emea: 'EMEA', aus: 'AUS' };
 const PILL_COLORS      = ['#0696D7', '#10B981', '#F59E0B', '#8B5CF6', '#EC4899', '#F97316'];
-
-// ── Icons ─────────────────────────────────────────────────────────────────────
-const ICON_MODELS = `<svg class="w-3.5 h-3.5 inline-block shrink-0 align-middle" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-          d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/>
-    <polyline stroke-linecap="round" stroke-linejoin="round" stroke-width="2" points="3.27 6.96 12 12.01 20.73 6.96"/>
-    <line stroke-linecap="round" stroke-linejoin="round" stroke-width="2" x1="12" y1="22.08" x2="12" y2="12"/>
-</svg>`;
-const ICON_STREAMS = `<svg class="w-3.5 h-3.5 inline-block shrink-0 align-middle" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12h2l3-7 4 14 3-8 2 1h4"/>
-</svg>`;
-const ICON_ASSETS = `<svg class="w-3.5 h-3.5 inline-block shrink-0 align-middle" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-          d="M7 7h10M7 12h6m-6 5h4M5 3h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z"/>
-</svg>`;
-
-const ICON_TICKET = `<svg class="w-3.5 h-3.5 inline-block shrink-0 align-middle" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-          d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z"/>
-</svg>`;
 
 // ── State ─────────────────────────────────────────────────────────────────────
 let _facilities = [];           // full list for the account
@@ -206,6 +187,7 @@ function refreshPills() {
 const NUMERIC_METRICS = [
     { key: 'modelCount',   label: 'Models',        icon: ICON_MODELS,   color: '#10B981' },
     { key: 'streamCount',  label: 'Streams',        icon: ICON_STREAMS,  color: '#EC4899' },
+    { key: 'streamAlertsCount',  label: 'Alerts',        icon: ICON_ALERTS,  color: '#FF487C' },
     { key: 'taggedAssets', label: 'Tagged Assets',  icon: ICON_ASSETS,   color: '#F59E0B' },
     { key: 'openTickets',  label: 'Open Tickets',   icon: ICON_TICKET,   color: '#FB923C' },
 ];
@@ -227,6 +209,7 @@ function getRowData(urn) {
         template:    cache?.template?.name ?? '—',
         modelCount:  cache?.modelCount ?? null,
         streamCount: stats?.streamCount     ?? null,
+        streamAlertsCount: stats?.streamAlertsCount ?? null,
         taggedAssets:stats?.taggedAssetCount ?? null,
         // A failed ticket fetch is unknown, not zero
         openTickets: stats?.ticketsError ? null : (stats?.openTicketCount ?? null),
@@ -344,12 +327,13 @@ function scheduleCharts() {
 
 /** Largest value of each metric across every facility whose stats have loaded. */
 function accountMaxima() {
-    const max = { modelCount: 1, streamCount: 1, taggedAssets: 1, openTickets: 1 };
+    const max = { modelCount: 1, streamCount: 1, streamAlertsCount: 1, taggedAssets: 1, openTickets: 1 };
     for (const f of _facilities) {
         const s = _statsMap.get(f.urn);
         if (!s || s.error) continue;
         max.modelCount  = Math.max(max.modelCount,  getCachedSummary(f.urn)?.modelCount ?? 0);
         max.streamCount = Math.max(max.streamCount, s.streamCount ?? 0);
+        max.streamAlertsCount = Math.max(max.streamAlertsCount, s.streamAlertsCount ?? 0);
         max.taggedAssets = Math.max(max.taggedAssets, s.taggedAssetCount ?? 0);
         if (!s.ticketsError) max.openTickets = Math.max(max.openTickets, s.openTicketCount ?? 0);
     }
@@ -511,6 +495,7 @@ function refreshOutliers() {
             name:        c?.name ?? f.name,
             modelCount:  c?.modelCount ?? 0,
             streamCount: s.streamCount ?? 0,
+            streamAlertsCount: s.streamAlertsCount ?? 0,
             taggedAssets:s.taggedAssetCount ?? 0,
         };
     }).filter(Boolean);
@@ -522,9 +507,10 @@ function refreshOutliers() {
     }
 
     const OUTLIER_METRICS = [
-        { key: 'streamCount',  label: 'Streams',       icon: ICON_STREAMS, color: '#EC4899' },
-        { key: 'taggedAssets', label: 'Tagged Assets', icon: ICON_ASSETS,  color: '#F59E0B' },
-        { key: 'modelCount',   label: 'Models',         icon: ICON_MODELS,  color: '#10B981' },
+        { key: 'streamCount', label: 'Streams', icon: ICON_STREAMS, color: '#EC4899' },
+        { key: 'streamAlertsCount', label: 'Alerts', icon: ICON_ALERTS, color: '#FF487C' },
+        { key: 'taggedAssets', label: 'Tagged Assets', icon: ICON_ASSETS, color: '#F59E0B' },
+        { key: 'modelCount', label: 'Models', icon: ICON_MODELS, color: '#10B981' },
     ];
 
     const outliers = [];
@@ -615,13 +601,14 @@ function computeThresholds() {
         return {
             modelCount:   c?.modelCount ?? 0,
             streamCount:  s.streamCount ?? 0,
+            streamAlertsCount: s.streamAlertsCount ?? 0,
             taggedAssets: s.taggedAssetCount ?? 0,
             openTickets:  s.ticketsError ? null : (s.openTicketCount ?? 0),
         };
     }).filter(Boolean);
 
     const result = {};
-    for (const key of ['modelCount', 'streamCount', 'taggedAssets', 'openTickets']) {
+    for (const key of ['modelCount', 'streamCount', 'streamAlertsCount', 'taggedAssets', 'openTickets']) {
         if (loaded.length < 2) { result[key] = null; continue; }
         const vals   = loaded.map(x => x[key]).filter(v => v !== null);
         if (vals.length < 2) { result[key] = null; continue; }
