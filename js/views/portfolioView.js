@@ -441,6 +441,7 @@ function renderLeaderboard() {
             region:       f.region ?? 'us',
             streams:      s ? (s.streamCount      ?? 0) : null,  // null = still loading
             assets:       s ? (s.taggedAssetCount ?? 0) : null,
+            alerts:       s ? (s.streamAlertsCount ?? 0) : null,
             templateName: s?.templateName ?? cached?.templateName ?? null,
             loaded:       !!s,
         };
@@ -459,7 +460,8 @@ function renderLeaderboard() {
             return ta.localeCompare(tb, undefined, { sensitivity: 'base' });
         });
     } else {
-        const sortKey = leaderboardMetric === 'streams' ? 'streams' : 'assets';
+        const sortKey = leaderboardMetric;
+
         rows.sort((a, b) => {
             if (a.loaded && b.loaded) return (b[sortKey] ?? 0) - (a[sortKey] ?? 0);
             if (a.loaded)  return -1;
@@ -471,6 +473,7 @@ function renderLeaderboard() {
     // Scale each metric independently to its own max
     const maxStreams = Math.max(1, ...rows.filter(r => r.loaded).map(r => r.streams ?? 0));
     const maxAssets  = Math.max(1, ...rows.filter(r => r.loaded).map(r => r.assets  ?? 0));
+    const maxAlerts  = Math.max(1, ...rows.filter(r => r.loaded).map(r => r.alerts  ?? 0));
 
     const btnClass = (m) =>
         `inline-flex items-center gap-1 px-3 py-1 text-xs rounded transition ${leaderboardMetric === m
@@ -488,6 +491,7 @@ function renderLeaderboard() {
             <span class="text-xs text-dark-text-secondary font-medium">Sort by:</span>
             <button id="lbMetricStreams"   class="${btnClass('streams')}">${ICON_STREAMS} Streams</button>
             <button id="lbMetricAssets"   class="${btnClass('assets')}">${ICON_ASSETS} Tagged Assets</button>
+            <button id="lbMetricAlerts"   class="${btnClass('alerts')}">${ICON_ALERTS} Alerts</button>
             <button id="lbMetricTemplate" class="${btnClass('template')}">${ICON_TEMPLATE} Template</button>
             <span class="text-xs text-dark-text-secondary ml-2">${rows.length} facilit${rows.length === 1 ? 'y' : 'ies'}</span>
         </div>
@@ -503,11 +507,14 @@ function renderLeaderboard() {
 
                     const streamsPct = row.loaded ? Math.round((row.streams / maxStreams) * 100) : 0;
                     const assetsPct  = row.loaded ? Math.round((row.assets  / maxAssets)  * 100) : 0;
+                    const alertsPct  = row.loaded ? Math.round((row.alerts  / maxAlerts)  * 100) : 0;
 
                     const streamsColor = leaderboardMetric === 'streams' ? '#0696D7' : '#374151';
                     const assetsColor  = leaderboardMetric === 'assets'  ? '#10B981' : '#374151';
+                    const alertsColor  = leaderboardMetric === 'alerts'  ? '#F59E0B' : '#374151';
                     const streamsVal   = row.loaded ? String(row.streams) : '…';
                     const assetsVal    = row.loaded ? String(row.assets)  : '…';
+                    const alertsVal    = row.loaded ? String(row.alerts)  : '…';
 
                     if (leaderboardMetric === 'template') {
                         // ── Template grouping view: clean list, no bars ──────────────
@@ -566,6 +573,15 @@ function renderLeaderboard() {
                                     <span class="text-xs font-medium w-8 text-right shrink-0"
                                           style="color:${leaderboardMetric === 'assets' ? '#e0e0e0' : '#6b7280'}">${assetsVal}</span>
                                 </div>
+                                <div class="flex items-center gap-2">
+                                    <span class="flex items-center gap-1 text-xs text-dark-text-secondary w-24 shrink-0">${ICON_ALERTS} Alerts</span>
+                                    <div class="flex-1 h-2 rounded-full bg-dark-bg overflow-hidden">
+                                        <div class="h-full rounded-full transition-all duration-500"
+                                             style="width:${alertsPct}%; background:${alertsColor}"></div>
+                                    </div>
+                                    <span class="text-xs font-medium w-8 text-right shrink-0"
+                                          style="color:${leaderboardMetric === 'alerts' ? '#e0e0e0' : '#6b7280'}">${alertsVal}</span>
+                                </div>
                             </div>
                             <div class="flex items-center gap-3 shrink-0 opacity-0 group-hover:opacity-100 transition pl-2">
                                 <button data-view-details="${escapeHtml(row.urn)}"
@@ -587,6 +603,14 @@ function renderLeaderboard() {
     // Wire sort buttons
     document.getElementById('lbMetricStreams')?.addEventListener('click', () => {
         leaderboardMetric = 'streams';
+        renderLeaderboard();
+    });
+    document.getElementById('lbMetricAssets')?.addEventListener('click', () => {
+        leaderboardMetric = 'assets';
+        renderLeaderboard();
+    });
+    document.getElementById('lbMetricAlerts')?.addEventListener('click', () => {
+        leaderboardMetric = 'alerts';
         renderLeaderboard();
     });
     document.getElementById('lbMetricAssets')?.addEventListener('click', () => {
