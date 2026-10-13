@@ -1,4 +1,5 @@
 // ── Metric icons (SVG, inline-friendly) ──────────────────────────────────────
+
 export const ICON_ALERTS = `<svg class="w-4 h-4 inline-block shrink-0 align-middle" fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path stroke-linejoin="round" stroke-width="2" d="M10.27 3.86a2 2 0 013.46 0l8.2 14.2A2 2 0 0120.2 21H3.8a2 2 0 01-1.73-2.94l8.2-14.2z"/>
     <path stroke-linecap="round" stroke-width="2" d="M12 8v5"/>
