@@ -38,7 +38,7 @@ Initially an internal Autodesk prototype; quality is held to production standard
 ## Key Features
 
 ### Portfolio tab
-- **Card grid**: facility thumbnail, model count, stream count, tagged asset count
+- **Card grid**: facility thumbnail, model count, stream count, tagged asset count, stream alert count
 - **Leaderboard view**: toggle between grid and ranked list; sort by Streams, Tagged Assets, or Template
 - **Template clustering**: template sort groups facilities under section headers with no numeric bars
 - **Account metrics banner**: Facilities · Models · Streams · Assets · Connections · Elements · Storage; "as of [date]" from API

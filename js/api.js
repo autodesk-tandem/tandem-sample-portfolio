@@ -1,5 +1,5 @@
 import { getEnv } from './config.js';
-import { ColumnFamilies, ElementFlags, QC, Region, SystemClassNames } from './../tandem/constants.js';
+import { ColumnFamilies, ElementFlags, QC, Region, StreamStateBitmapMask, SystemClassNames } from './../tandem/constants.js';
 import { toFullKey, toSystemId } from './../tandem/keys.js';
 import { isDefaultModel } from './utils.js';
 
@@ -894,6 +894,44 @@ export async function getTickets(facilityURN, region, { rethrow = false } = {}) 
 }
 
 /**
+ * Get stream alerts count from the default model
+ * Stream alerts are only related to the default model
+ * @param {string} facilityURN - Facility URN
+ * @param {string} region - Region identifier
+ * @returns {Promise<number>} Count of stream alerts
+ */
+export async function getStreamAlertsCount(facilityURN, region) {
+  try {
+    const defaultModelURN = getDefaultModelURN(facilityURN);
+    
+    const requestPath = `${tandemBaseURL}/models/${defaultModelURN}/stream-alerts`;
+    const response = await fetch(requestPath, makeRequestOptionsGET(region));
+    
+    if (!response.ok) {
+      if (response.status === 403) {
+        console.log('No default model found - alerts not available');
+        return 0;
+      }
+      throw new Error(`Failed to fetch alerts: ${response.statusText}`);
+    }
+    
+    const data = await response.json();
+    
+    // Filter for alerts
+    const thresholdAlertMask = StreamStateBitmapMask.WARN | StreamStateBitmapMask.ALERT;
+    const alerts = Object.values(data)
+      .flatMap(Object.values)
+      .filter(alert => alert.currentState & thresholdAlertMask);
+    
+    return alerts.length;
+  } catch (error) {
+    console.error('Error fetching alerts:', error);
+    if (rethrow) throw error;
+    return 0;
+  }
+}
+
+/**
  * Get a single stream configuration
  * @param {string} facilityURN - Facility URN
  * @param {string} region - Region identifier
@@ -1750,14 +1788,15 @@ export async function getFacilityStats(facilityURN, region) {
   try {
     // A failed ticket fetch must not look like "no tickets" — flag it so the Tickets tab can say so.
     let ticketsError = false;
-    const [streams, taggedAssetCount, tickets] = await Promise.all([
+    const [streams, taggedAssetCount, tickets, streamAlertsCount] = await Promise.all([
       getStreams(facilityURN, region),
       getTaggedAssetsCount(facilityURN, region),
       getTickets(facilityURN, region, { rethrow: true }).catch(() => { ticketsError = true; return []; }),
+      getStreamAlertsCount(facilityURN, region),
     ]);
     const openTicketCount   = tickets.filter(t => !t[QC.CloseDate]?.[0]).length;
     const closedTicketCount = tickets.length - openTicketCount;
-    return { streamCount: streams.length, taggedAssetCount, openTicketCount, closedTicketCount, ticketsError };
+    return { streamCount: streams.length, taggedAssetCount, openTicketCount, closedTicketCount, ticketsError, streamAlertsCount };
   } catch (err) {
     console.error('Error fetching facility stats:', err);
     return { streamCount: 0, taggedAssetCount: 0, openTicketCount: 0, closedTicketCount: 0 };
