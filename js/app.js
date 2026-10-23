@@ -342,7 +342,14 @@ async function loadAllFacilityStats(facilities, accountAtStart) {
                     templateName,
                     statsLoaded: true,
                 });
-                updateCardStats(f.urn, stats);
+                updateCardStats(f.urn, stats, {
+                    'Project': fresh?.project,
+                    'Owner': fresh?.owner,
+                    'Address': fresh?.address,
+                    'Time Zone': fresh?.timeZone,
+                    'Region': fresh?.region,
+                    'Template Name': fresh?.templateName,
+                });
                 updateCompareStats(f.urn, stats);
                 ticketsView.updateStats();
             } catch (err) {

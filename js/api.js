@@ -1788,7 +1788,8 @@ export async function getFacilityStats(facilityURN, region) {
   try {
     // A failed ticket fetch must not look like "no tickets" — flag it so the Tickets tab can say so.
     let ticketsError = false;
-    const [streams, taggedAssetCount, tickets, streamAlertsCount] = await Promise.all([
+    const [parameters,streams, taggedAssetCount, tickets, streamAlertsCount] = await Promise.all([
+      getFacilityParameters(facilityURN, region),
       getStreams(facilityURN, region),
       getTaggedAssetsCount(facilityURN, region),
       getTickets(facilityURN, region, { rethrow: true }).catch(() => { ticketsError = true; return []; }),
@@ -1796,10 +1797,10 @@ export async function getFacilityStats(facilityURN, region) {
     ]);
     const openTicketCount   = tickets.filter(t => !t[QC.CloseDate]?.[0]).length;
     const closedTicketCount = tickets.length - openTicketCount;
-    return { streamCount: streams.length, taggedAssetCount, openTicketCount, closedTicketCount, ticketsError, streamAlertsCount };
+    return { parameters,streamCount: streams.length, taggedAssetCount, openTicketCount, closedTicketCount, ticketsError, streamAlertsCount };
   } catch (err) {
     console.error('Error fetching facility stats:', err);
-    return { streamCount: 0, taggedAssetCount: 0, openTicketCount: 0, closedTicketCount: 0 };
+    return { parameters: [], streamCount: 0, taggedAssetCount: 0, openTicketCount: 0, closedTicketCount: 0 };
   }
 }
 

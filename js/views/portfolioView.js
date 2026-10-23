@@ -657,6 +657,17 @@ function createSkeletonCard(facility) {
             <!-- Spacer -->
             <div class="flex-1"></div>
 
+            <!-- Facility Details table -->
+            <div class="flex items-start justify-between gap-2">
+                <p class="text-xs font-medium text-dark-text leading-tight">Facility Details</p>
+            </div>
+            <div class="facility-table h-16 shrink-0 overflow-y-auto border-dark-border focus-visible:outline focus-visible:outline-2 focus-visible:outline-tandem-blue"
+             tabindex="0" role="region" aria-label="${escapeHtml(facility.name)} sample data">
+                <table class="w-full table-fixed text-xs" aria-label="Sample facility data">
+                    <tbody></tbody>
+                </table>
+            </div>
+
             <!-- Footer: Open in Stats + Open in Tandem -->
             <div class="pt-2 border-t border-dark-border flex items-center justify-between">
                 <button data-view-details="${escapeHtml(facility.urn)}"
@@ -679,6 +690,32 @@ function createSkeletonCard(facility) {
             </div>
         </div>`;
     return card;
+}
+
+function populateFacilityParameters(card, info, stats) {
+    const rows = [];
+
+    for (const [label, value] of Object.entries(info)) {
+        if (value) {
+            rows.push({ label, value });
+        }
+    }
+    for (const p of stats.parameters) {
+        rows.push({
+            label: p.name,
+            value: p.value.toString(),
+        });
+    }
+    
+    card.querySelector('.facility-table tbody').innerHTML = rows.map(row => `
+        <tr class="h-8 odd:bg-dark-bg">
+            <th scope="row" class="w-1/2 px-3 py-0 text-left font-normal text-dark-text-secondary">
+                <span class="block truncate" title="${escapeHtml(row.label)}">${escapeHtml(row.label)}</span>
+            </th>
+            <td class="w-1/2 px-3 py-0 text-right text-dark-text">
+                <span class="block truncate" title="${escapeHtml(row.value)}">${escapeHtml(row.value)}</span>
+            </td>
+        </tr>`).join('');
 }
 
 /**
@@ -704,7 +741,10 @@ async function loadFacilityData(facility, card) {
         ]);
 
         const models       = info?.links ?? [];
+        const project      = info?.props?.['Identity Data']?.['Project Name'] ?? null;
         const address      = info?.props?.['Identity Data']?.['Address'] ?? null;
+        const owner        = info?.props?.['Identity Data']?.['Owner'] ?? null;
+        const timeZone     = info?.props?.['Identity Data']?.['timeZone'] ?? null;
         const templateName = inlineTemplate?.name ?? null;
 
         const summary = {
@@ -714,7 +754,10 @@ async function loadFacilityData(facility, card) {
             thumbnailURL: thumbnailURL ?? null,
             modelCount:   Array.isArray(models) ? models.length : 0,
             address,
+            project,
+            owner,
             templateName,
+            timeZone,
             loaded:       true,
             error:        false,
         };
@@ -784,7 +827,7 @@ function showCardError(card) {
  * @param {string} urn - Facility URN
  * @param {{streamCount?: number, taggedAssetCount?: number, error?: boolean}} stats
  */
-export function updateCardStats(urn, stats) {
+export function updateCardStats(urn, stats, info) {
     // Always store in the stats store (leaderboard reads from here).
     // templateName comes from loadFacilityData (async, may not have run yet).
     // If it's already in the cache, great. If not, loadFacilityData will back-patch
@@ -831,6 +874,7 @@ export function updateCardStats(urn, stats) {
                 alertsEl.innerHTML = `${ICON_ALERTS} <span class="text-dark-text font-medium">${stats.streamAlertsCount}</span> alerts`;
             }
         }
+        populateFacilityParameters(card, info, stats);
     }
 
     // Re-render leaderboard live as stats arrive

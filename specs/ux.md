@@ -51,12 +51,18 @@ Account totals:  • Facilities 4  • Models 38  • Streams 2,343  • Assets 
 │  Facility Name               │
 │  Region                      │
 │  ∿ 24 streams   ▣ 142 assets │
+| Facility Details             |
+| label  | value               |
 │──────────────────────────────│
 │  Open in Stats ↗  Open in Tandem ↗ │
 └──────────────────────────────┘
 ```
 - Skeleton cards shown while data loads
 - Stats (streams, assets) load asynchronously and fill in
+- Directly below each thumbnail, show a data table with Facility detials.
+- Keep the table viewport two rows tall; additional rows scroll vertically without expanding the card.
+- The scroll area is keyboard-focusable and labeled with the facility name.
+- The table is populated with static facility data (i.e. address, project name) and dynamic properties configured in facility template.
 
 ### Leaderboard view (toggle)
 Grid/leaderboard toggle buttons in the filter bar (right side).
